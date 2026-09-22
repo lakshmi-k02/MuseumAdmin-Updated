@@ -281,34 +281,71 @@ a:hover {
     justify-content: flex-end;
 }
 
-/* Sidebar Toggle Animation */
-#sidebarToggle svg line {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    transform-origin: center;
+/* Sidebar Toggle Animation & State */
+#sidebarToggle {
+    transition: background-color 0.2s ease, transform 0.2s ease;
 }
 
 #sidebarToggle:hover {
-    background-color: rgba(0, 0, 0, 0.05);
-    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
 }
 
-/* Collapsed State: Form a Right Arrow (->) */
-/* Top line rotates down-right */
-#sidebarToggle.collapsed .line-top {
-    transform: translate(-5px, 5px) rotate(45deg) scaleX(0.7);
-    transform-origin: top right;
+#sidebarToggle .sidebar-toggle-chevron {
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Bottom line rotates up-right */
-#sidebarToggle.collapsed .line-bottom {
-    transform: translate(-5px, -5px) rotate(-45deg) scaleX(0.7);
-    transform-origin: bottom right;
+#sidebarToggle.collapsed .sidebar-toggle-chevron,
+#sidebar.collapsed #sidebarToggle .sidebar-toggle-chevron {
+    transform: rotate(180deg);
 }
 
-/* Middle line stays as shaft */
-#sidebarToggle.collapsed .line-middle {
-    transform: translateX(0);
-    opacity: 1;
+#sidebarToggle .sidebar-toggle-close {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    #sidebar.mobile-open #sidebarToggle .sidebar-toggle-chevron {
+        display: none !important;
+    }
+    #sidebar.mobile-open #sidebarToggle .sidebar-toggle-close {
+        display: inline-flex !important;
+    }
+}
+
+.sidebar-expand-btn, #sidebarExpand {
+    display: none !important;
+}
+
+/* Collapsed layout overrides */
+#sidebar.collapsed,
+.sidebar.collapsed,
+.admin-layout.sidebar-collapsed #sidebar {
+    width: 72px !important;
+    min-width: 72px !important;
+    max-width: 72px !important;
+    flex-basis: 72px !important;
+}
+
+.sidebar.collapsed + .main-content,
+#sidebar.collapsed + .main-content,
+.admin-layout.sidebar-collapsed .main-content {
+    margin-left: 72px !important;
+}
+
+.sidebar.collapsed .sidebar-logo-text,
+#sidebar.collapsed .sidebar-logo-text,
+.sidebar.collapsed .nav-item-text,
+#sidebar.collapsed .nav-item-text,
+.sidebar.collapsed .nav-section-title,
+#sidebar.collapsed .nav-section-title {
+    display: none !important;
+}
+
+.sidebar.collapsed .nav-item,
+#sidebar.collapsed .nav-item {
+    justify-content: center !important;
+    padding: 12px 0 !important;
 }
 
 /* ============================================

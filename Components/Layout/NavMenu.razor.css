@@ -17,6 +17,15 @@
             z-index: 1000; /* Ensure sidebar is above content to show the button */
             display: flex;
             flex-direction: column;
+            width: var(--sidebar-width, 240px);
+        }
+
+        .sidebar.collapsed,
+        #sidebar.collapsed {
+            width: var(--sidebar-collapsed-width, 72px) !important;
+            min-width: var(--sidebar-collapsed-width, 72px) !important;
+            max-width: var(--sidebar-collapsed-width, 72px) !important;
+            flex-basis: var(--sidebar-collapsed-width, 72px) !important;
         }
         
         /* Mobile: Hide sidebar by default */
@@ -63,100 +72,67 @@
                 pointer-events: auto !important;
             }
 
-            /* Hide the small expand floating button on mobile expanded view */
-            .sidebar.mobile-open .sidebar-expand-btn,
-            #sidebar.mobile-open .sidebar-expand-btn {
-                display: none !important;
-            }
         }
 
         .sidebar-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px;
+            padding: 12px 14px;
             position: relative;
-            /* Ensure header content doesn't overflow weirdly in collapsed state */
             overflow: visible; 
+            min-height: 64px;
+            box-sizing: border-box;
         }
 
         .sidebar-toggle { 
             background: transparent; 
             border: 0; 
             padding: 6px; 
-            display:flex; 
-            align-items:center; 
-            justify-content:center; 
-            cursor:pointer; 
-            color: inherit;
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            color: #ffffff;
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            transition: background 0.2s ease, transform 0.2s ease;
         }
 
-        /* Toggle icon states: show close icon when sidebar has mobile-open */
-        .sidebar-toggle .close-icon { display: none; }
-        #sidebar.mobile-open #sidebarToggle .left-arrow-icon { display: none; }
-        #sidebar.mobile-open #sidebarToggle .close-icon { display: inline; }
-
-        /* Clean Expand Button */
-.sidebar-expand-btn {
-    position: relative;
-    margin-left: 5px;
-    width: 32px;
-    height: 32px;
-
-    display: none; /* Hidden by default (expanded) */
-    align-items: center;
-    justify-content: center;
-
-    background: transparent;   /* ❌ no glass */
-    border: none;               /* ❌ no border */
-    box-shadow: none;           /* ❌ no shadow */
-
-    cursor: pointer;
-    transition: transform 0.2s ease, background 0.2s ease;
-    z-index: 1001;
-}
-
-/* Subtle hover feedback */
-.sidebar-expand-btn:hover {
-    background: rgba(0, 0, 0, 0.05); /* soft hover */
-    border-radius: 6px;
-    transform: scale(1.05);
-}
-
-/* Optional: active click feedback */
-.sidebar-expand-btn:active {
-    transform: scale(0.95);
-}
-
-/* WHITE arrow for dark background */
-.sidebar-expand-btn svg {
-    stroke: #ffffff;
-}
-.sidebar-expand-btn:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 6px;
-}
-
-.sidebar-toggle:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 6px;
-}
-
-
-
-        /* Logic for collapsed state */
-        .sidebar.collapsed .sidebar-expand-btn {
-            display: flex;
-            /* Pop it out of the flow to ensure it fits and is visible */
-            position: absolute;
-            right: -16px; /* Half width outside to float on the edge */
-            top: 50%;
-            transform: translateY(-50%);
+        .sidebar-toggle:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.05);
         }
 
-        /* Hide the default toggle when collapsed */
-        .sidebar.collapsed #sidebarToggle {
-            display: none; 
+        .sidebar-toggle:active {
+            transform: scale(0.95);
+        }
+
+        .sidebar-toggle-chevron {
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            stroke: #ffffff;
+        }
+
+        /* Rotates chevron to point right when collapsed */
+        .sidebar.collapsed .sidebar-toggle-chevron,
+        #sidebar.collapsed .sidebar-toggle-chevron {
+            transform: rotate(180deg);
+        }
+
+        /* Close icon is strictly hidden on desktop */
+        .sidebar-toggle-close {
+            display: none !important;
+        }
+
+        /* Mobile header toggle states */
+        #sidebar.mobile-open #sidebarToggle .sidebar-toggle-chevron { 
+            display: none !important; 
+        }
+        #sidebar.mobile-open #sidebarToggle .sidebar-toggle-close { 
+            display: inline-flex !important; 
+            stroke: #ffffff;
         }
 
         .sidebar-logo {
@@ -177,35 +153,65 @@
         }
         
         .sidebar.collapsed .sidebar-logo-text {
-            display: none;
+            display: none !important;
             opacity: 0;
             pointer-events: none;
         }
 
-        /* "while hamburger menu is clicked move memby logo png slightly left" */
-        /* "while hamburger menu is clicked move memby logo png slightly left" */
+        .sidebar.collapsed .sidebar-header {
+            padding: 10px 4px;
+            justify-content: center;
+            position: relative;
+        }
+
         .sidebar.collapsed .sidebar-logo img {
-            /* Transform and resize for collapsed state */
-            transform: translateX(-4px) scale(0.8); 
-            /* Optional: if you prefer changing width/height explicitly:
-               width: 32px; height: auto; 
-            */
+            transform: translateX(-6px) scale(0.8); 
         }
         
-        .sidebar.collapsed .sidebar-expand-btn {
-           /* Ensure gap between logo and button */
-           left: 48px; /* Push it further right from the logo area */
-           right: auto;
-           position: absolute;
-           top: 50%;
-           transform: translateY(-50%);
+        .sidebar.collapsed .sidebar-toggle {
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 24px;
+            padding: 2px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
         }
-        
-        .sidebar-expand-btn svg { transition: transform 220ms ease; }
+
+        .sidebar.collapsed .sidebar-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-50%) scale(1.1);
+        }
 
         /* Align nav items with the moved logo in collapsed state */
         .sidebar.collapsed .nav-item-icon {
-            transform: translateX(-4px);
+            transform: none;
+            margin: 0 !important;
+            font-size: 1.25rem !important;
+        }
+
+        /* Collapsed nav item states */
+        .sidebar.collapsed .nav-item-text,
+        #sidebar.collapsed .nav-item-text {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        .sidebar.collapsed .nav-section-title,
+        #sidebar.collapsed .nav-section-title {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        .sidebar.collapsed .nav-item,
+        #sidebar.collapsed .nav-item {
+            justify-content: center !important;
+            padding: 12px 0 !important;
+            text-align: center !important;
         }
         
         /* Modern dropdown chevron styling used across filters and toggles */

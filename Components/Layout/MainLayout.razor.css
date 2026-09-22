@@ -23,57 +23,42 @@
 
 /* Render the sidebar as part of the flex layout (not fixed) so main sits next to it.
    This overrides the global `.sidebar { position: fixed }` only for this layout. */
-#sidebar {
+#sidebar,
+.sidebar {
     position: relative !important;
-    width: var(--sidebar-width) !important;
+    width: var(--sidebar-width, 240px);
     left: auto !important;
     top: auto !important;
     height: auto !important;
     box-shadow: none !important;
+    flex: 0 0 var(--sidebar-width, 240px);
+    transition: width 220ms ease, flex-basis 220ms ease;
+}
+
+#sidebar.collapsed,
+.sidebar.collapsed,
+.admin-layout.sidebar-collapsed #sidebar,
+.admin-layout.sidebar-collapsed .sidebar {
+    width: var(--sidebar-collapsed-width, 72px) !important;
+    min-width: var(--sidebar-collapsed-width, 72px) !important;
+    max-width: var(--sidebar-collapsed-width, 72px) !important;
+    flex: 0 0 var(--sidebar-collapsed-width, 72px) !important;
+    flex-basis: var(--sidebar-collapsed-width, 72px) !important;
 }
 
 .main-content {
-    /* Offset the main content so it starts after the sidebar.
-       Use a margin rather than relying on global/flexible layout so
-       this works even if the sidebar is positioned (fixed/absolute).
-       Defaults provided for the CSS variables to be safe. */
+    /* Offset the main content so it starts after the sidebar. */
     margin-left: var(--sidebar-width, 240px);
     transition: margin-left 220ms ease;
-    flex: 1 1 auto;
-}
-
-/* Use flex-basis so main expands when sidebar shrinks (collapsed) */
-.admin-layout>#sidebar,
-.admin-layout>.sidebar {
-    flex: 0 0 var(--sidebar-width);
-    width: var(--sidebar-width);
-    transition: flex-basis var(--transition-base), width var(--transition-base);
-}
-
-.admin-layout>#sidebar.collapsed,
-.admin-layout>.sidebar.collapsed {
-    flex-basis: var(--sidebar-collapsed-width) !important;
-    width: var(--sidebar-collapsed-width) !important;
-}
-
-.admin-layout>.main-content {
     flex: 1 1 auto;
     width: auto;
 }
 
-/* When the sidebar is collapsed we want main to start after the
-   collapsed width. We target the sibling main element so this works
-   regardless of whether the sidebar is fixed or part of the flex flow. */
-.sidebar.collapsed+.main-content,
-#sidebar.collapsed+.main-content {
-    margin-left: var(--sidebar-collapsed-width, 72px);
-}
-
-/* Fallback: if the sidebar is a direct child and flex is working, allow
-   the flex rule to control layout (keeps original behaviour). */
-.admin-layout>#sidebar:not(.collapsed)~.main-content,
-.admin-layout>.sidebar:not(.collapsed)~.main-content {
-    margin-left: var(--sidebar-width, 240px);
+/* When the sidebar is collapsed we want main to start after the collapsed width. */
+.sidebar.collapsed + .main-content,
+#sidebar.collapsed + .main-content,
+.admin-layout.sidebar-collapsed .main-content {
+    margin-left: var(--sidebar-collapsed-width, 72px) !important;
 }
 
 /* Mobile: Hide sidebar by default, show on hamburger click */

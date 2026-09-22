@@ -46,12 +46,18 @@
             toggle() {
                 const sidebar = document.getElementById('sidebar');
                 const btn = document.getElementById('sidebarToggle');
+                const layout = document.querySelector('.admin-layout');
                 if (!sidebar) return;
 
                 sidebar.classList.toggle('collapsed');
                 const isCollapsed = sidebar.classList.contains('collapsed');
+                if (layout) {
+                    layout.classList.toggle('sidebar-collapsed', isCollapsed);
+                }
                 if (btn) {
                     btn.classList.toggle('collapsed', isCollapsed);
+                    btn.setAttribute('title', isCollapsed ? 'Expand sidebar' : 'Collapse sidebar');
+                    btn.setAttribute('aria-label', isCollapsed ? 'Expand sidebar' : 'Collapse sidebar');
                 }
             },
 
@@ -86,11 +92,13 @@
                 const sidebar = document.getElementById('sidebar');
                 const overlay = document.getElementById('sidebarOverlay');
                 const btn = document.getElementById('sidebarToggle');
+                const layout = document.querySelector('.admin-layout');
                 const isMobile = window.innerWidth <= 768;
                 const isTablet = window.innerWidth < 1024;
 
                 if (isMobile) {
                     sidebar?.classList.remove('collapsed', 'mobile-open');
+                    layout?.classList.remove('sidebar-collapsed');
                     overlay?.classList.remove('active');
                     document.body.style.overflow = '';
                 } else {
@@ -100,14 +108,28 @@
 
                     if (isTablet) {
                         sidebar?.classList.add('collapsed');
+                        layout?.classList.add('sidebar-collapsed');
                         btn?.classList.add('collapsed');
+                        if (btn) {
+                            btn.setAttribute('title', 'Expand sidebar');
+                            btn.setAttribute('aria-label', 'Expand sidebar');
+                        }
                     } else {
                         sidebar?.classList.remove('collapsed');
+                        layout?.classList.remove('sidebar-collapsed');
                         btn?.classList.remove('collapsed');
+                        if (btn) {
+                            btn.setAttribute('title', 'Collapse sidebar');
+                            btn.setAttribute('aria-label', 'Collapse sidebar');
+                        }
                     }
                 }
             }
         };
+
+        window.toggleSidebar = () => AppUI.sidebar.toggle();
+        window.toggleMobileSidebar = () => AppUI.sidebar.toggleMobile();
+        window.closeMobileSidebar = () => AppUI.sidebar.close();
 
         AppUI.drawer = {
             open() {
@@ -225,6 +247,20 @@
                 const dropdown = document.getElementById('notificationDropdown');
                 if (wrapper && dropdown && !wrapper.contains(e.target)) {
                     dropdown.classList.remove('open');
+                }
+            }, true);
+
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest('#sidebarToggle');
+                if (btn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isMobile = window.innerWidth <= 768;
+                    if (isMobile) {
+                        AppUI.sidebar.toggleMobile();
+                    } else {
+                        AppUI.sidebar.toggle();
+                    }
                 }
             }, true);
 

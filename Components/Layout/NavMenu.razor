@@ -14,24 +14,17 @@
             <span class="sidebar-logo-text">memby.</span>
         </div>
         
-        <!-- Standard toggle (collapse) -->
-        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
-                <!-- Left-arrow (used for collapsing/expanding sidebar) - modern chevron -->
-                <svg class="left-arrow-icon dropdown-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="15 6 9 12 15 18"></polyline>
-                </svg>
-            <!-- Close (X) icon - shown when mobile-open -->
-            <svg class="close-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <!-- Single Unified Sidebar Toggle Button -->
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar"
+                onclick="event.preventDefault(); event.stopPropagation(); if(window.innerWidth <= 768){ (window.AppUI && window.AppUI.sidebar) ? window.AppUI.sidebar.toggleMobile() : (window.toggleMobileSidebar && window.toggleMobileSidebar()); } else { (window.AppUI && window.AppUI.sidebar) ? window.AppUI.sidebar.toggle() : (window.toggleSidebar && window.toggleSidebar()); }">
+            <!-- Left-arrow chevron (rotates 180deg to point right when collapsed) -->
+            <svg class="sidebar-toggle-chevron dropdown-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="pointer-events: none;">
+                <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+            <!-- Close (X) icon - strictly used on mobile drawer when opened -->
+            <svg class="sidebar-toggle-close" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none; pointer-events: none;">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-        </button>
-
-        <!-- Expand Button (Visible only when collapsed) -->
-        <button id="sidebarExpand" class="sidebar-expand-btn" aria-label="Expand sidebar" title="Expand sidebar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <!-- Chevron Right -->
-                <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
         </button>
     </div>
@@ -127,146 +120,6 @@
 
 </aside>
 
-<script>
-    (function(){
-        function updateExpandBtn(){
-            var sidebar = document.getElementById('sidebar');
-            var expand = document.getElementById('sidebarExpand');
-            if(!sidebar || !expand) return;
-            if(sidebar.classList.contains('collapsed')){
-                expand.style.opacity = '1';
-                expand.style.pointerEvents = 'auto';
-            } else {
-                expand.style.opacity = '';
-                expand.style.pointerEvents = '';
-            }
-        }
-
-        function localToggle(){
-            var sidebar = document.getElementById('sidebar');
-            if(!sidebar) return;
-            sidebar.classList.toggle('collapsed');
-            updateExpandBtn();
-        }
-
-        function localExpand(){
-            var sidebar = document.getElementById('sidebar');
-            if(!sidebar) return;
-            sidebar.classList.remove('collapsed');
-            updateExpandBtn();
-        }
-
-        function mobileToggle(){
-            var sidebar = document.getElementById('sidebar');
-            if(!sidebar) return;
-            sidebar.classList.toggle('mobile-open');
-            updateExpandBtn();
-        }
-
-        document.addEventListener('DOMContentLoaded', function(){
-            updateExpandBtn();
-
-            var btn = document.getElementById('sidebarToggle');
-            var expand = document.getElementById('sidebarExpand');
-
-            if(btn){
-                btn.addEventListener('click', function(e){
-                    var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-                    if(isMobile){
-                        // Prefer app-level mobile toggle so overlay and body overflow are handled
-                        if(typeof window.toggleMobileSidebar === 'function'){
-                            try{ window.toggleMobileSidebar(); }catch(err){
-                                // Fallback to local toggle below
-                            }
-                        } else if(typeof window.toggleSidebar === 'function' && window.toggleSidebar !== localToggle){
-                            try{ window.toggleSidebar(); }catch(err){}
-                        }
-
-                        // If app-level toggle wasn't available, manage classes locally
-                        var sidebar = document.getElementById('sidebar');
-                        var overlay = document.getElementById('sidebarOverlay');
-                        if(sidebar){
-                            if(sidebar.classList.contains('mobile-open')){
-                                sidebar.classList.remove('mobile-open');
-                                if(sidebar.style) sidebar.style.transform = 'translateX(-100%)';
-                                if(overlay) overlay.classList.remove('active');
-                                document.body.style.overflow = '';
-                            } else {
-                                sidebar.classList.add('mobile-open');
-                                if(sidebar.style) sidebar.style.transform = 'translateX(0)';
-                                if(overlay) overlay.classList.add('active');
-                                document.body.style.overflow = 'hidden';
-                            }
-                        }
-
-                        updateExpandBtn();
-                        e.stopPropagation();
-                    } else {
-                        if(typeof window.toggleSidebar === 'function' && window.toggleSidebar !== localToggle){
-                            window.toggleSidebar();
-                        } else {
-                            localToggle();
-                        }
-                    }
-                });
-
-                // Ensure clicking/tapping the close-icon (X) always closes the mobile sidebar
-                var closeSvg = btn.querySelector('.close-icon');
-                if(closeSvg){
-                    closeSvg.addEventListener('click', function(ev){
-                        // Prefer app-level close so overlay is removed
-                        if(typeof window.closeMobileSidebar === 'function'){
-                            try{ window.closeMobileSidebar(); }catch(err){}
-                        } else if(typeof window.toggleMobileSidebar === 'function'){
-                            try{ window.toggleMobileSidebar(); }catch(err){}
-                        } else {
-                            var sidebar = document.getElementById('sidebar');
-                            var overlay = document.getElementById('sidebarOverlay');
-                            if(sidebar && sidebar.classList.contains('mobile-open')){
-                                sidebar.classList.remove('mobile-open');
-                                if(sidebar.style) sidebar.style.transform = 'translateX(-100%)';
-                            }
-                            if(overlay) overlay.classList.remove('active');
-                            document.body.style.overflow = '';
-                        }
-                        ev.stopPropagation();
-                    });
-                    // touchstart for better responsiveness on mobile
-                    closeSvg.addEventListener('touchstart', function(ev){
-                        if(typeof window.closeMobileSidebar === 'function'){
-                            try{ window.closeMobileSidebar(); }catch(err){}
-                        } else if(typeof window.toggleMobileSidebar === 'function'){
-                            try{ window.toggleMobileSidebar(); }catch(err){}
-                        } else {
-                            var sidebar = document.getElementById('sidebar');
-                            var overlay = document.getElementById('sidebarOverlay');
-                            if(sidebar && sidebar.classList.contains('mobile-open')){
-                                sidebar.classList.remove('mobile-open');
-                                if(sidebar.style) sidebar.style.transform = 'translateX(-100%)';
-                            }
-                            if(overlay) overlay.classList.remove('active');
-                            document.body.style.overflow = '';
-                        }
-                        ev.preventDefault();
-                        ev.stopPropagation();
-                    }, {passive:false});
-                }
-            }
-
-            if(expand){
-                expand.addEventListener('click', function(e){
-                    if(typeof window.toggleSidebar === 'function' && window.toggleSidebar !== localToggle){
-                        // prefer global toggle so main area updates as expected
-                        window.toggleSidebar();
-                        updateExpandBtn();
-                    } else {
-                        localExpand();
-                    }
-                });
-            }
-        });
-    })();
-</script>
 
 @code {
     protected override async Task OnInitializedAsync()
