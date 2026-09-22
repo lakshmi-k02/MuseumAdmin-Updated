@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/memby-design-system.css?v1.6"/>
+    <link rel="stylesheet" href="/css/admin-card.css?v1.6"/>
+    <link rel="stylesheet" href="/css/top-bar.css?v1.6"/>
+    <link rel="stylesheet" href="/css/children-premium.css?v1.6"/>
+    <link rel="stylesheet" href="/css/group-card-premium.css?v1.6"/>
+    <link rel="stylesheet" href="/css/family-card-premium.css?v1.6"/>
+    <link rel="stylesheet" href="/MuseumAdmin.styles.css?v2.5"/>
+    <link rel="stylesheet" href="/app.css?v2.5"/>
+
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+
+    <script>
+        (function() {
+            const pathname = (window.location?.pathname || '').toLowerCase();
+            if (pathname === '/login' || pathname.startsWith('/login')) {
+                document.documentElement.classList.add('no-animated-bg');
+                document.body.classList.add('no-animated-bg');
+            }
+        })();
+    </script>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/cardCheckboxes.js"></script>
+    <script src="js/childDetailSpeech.js"></script>
+    <script type="module" src="/js/dropdownPortal.js"></script>
+    <script src="/js/inactivity.js?v=2.4"></script>
+
+    <script>
+        window.AppUI = window.AppUI || {};
+
+        AppUI.sidebar = {
+            toggle() {
+                const sidebar = document.getElementById('sidebar');
+                const btn = document.getElementById('sidebarToggle');
+                if (!sidebar) return;
+
+                sidebar.classList.toggle('collapsed');
+                const isCollapsed = sidebar.classList.contains('collapsed');
+                if (btn) {
+                    btn.classList.toggle('collapsed', isCollapsed);
+                }
+            },
+
+            toggleMobile() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                if (!sidebar) return;
+
+                const isOpen = sidebar.classList.contains('mobile-open');
+                sidebar.classList.toggle('mobile-open', !isOpen);
+                sidebar.style.transform = isOpen ? 'translateX(-100%)' : 'translateX(0)';
+                if (overlay) {
+                    overlay.classList.toggle('active', !isOpen);
+                }
+                document.body.style.overflow = isOpen ? '' : 'hidden';
+            },
+
+            close() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                if (sidebar) {
+                    sidebar.classList.remove('mobile-open');
+                    sidebar.style.transform = 'translateX(-100%)';
+                }
+                if (overlay) {
+                    overlay.classList.remove('active');
+                }
+                document.body.style.overflow = '';
+            },
+
+            checkScreenSize() {
+                const sidebar = document.getElementById('sidebar');
+                const overlay = document.getElementById('sidebarOverlay');
+                const btn = document.getElementById('sidebarToggle');
+                const isMobile = window.innerWidth <= 768;
+                const isTablet = window.innerWidth < 1024;
+
+                if (isMobile) {
+                    sidebar?.classList.remove('collapsed', 'mobile-open');
+                    overlay?.classList.remove('active');
+                    document.body.style.overflow = '';
+                } else {
+                    sidebar?.classList.remove('mobile-open');
+                    overlay?.classList.remove('active');
+                    document.body.style.overflow = '';
+
+                    if (isTablet) {
+                        sidebar?.classList.add('collapsed');
+                        btn?.classList.add('collapsed');
+                    } else {
+                        sidebar?.classList.remove('collapsed');
+                        btn?.classList.remove('collapsed');
+                    }
+                }
+            }
+        };
+
+        AppUI.drawer = {
+            open() {
+                document.body.classList.add('drawer-open');
+            },
+
+            close() {
+                document.body.classList.remove('drawer-open');
+            },
+
+            approve() {
+                window.showToast('Approved ✅', 'success');
+                this.close();
+            },
+
+            reject() {
+                window.showToast('Rejected ❌', 'error');
+                this.close();
+            }
+        };
+
+        AppUI.notifications = {
+            toggle() {
+                const dropdown = document.getElementById('notificationDropdown');
+                dropdown?.classList.toggle('open');
+            }
+        };
+
+        AppUI.filter = {
+            gallery(filter, element) {
+                document.querySelectorAll('.filter-tab').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+
+                if (element) {
+                    element.classList.add('active');
+                }
+
+                const dropdown = document.getElementById('mobileFilterDropdown');
+                if (dropdown) {
+                    dropdown.value = filter;
+                }
+            }
+        };
+
+        window.showToast = function(message, type = 'success') {
+            if (typeof message !== 'string' || !message.trim()) return;
+
+            let container = document.querySelector('.toast-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'toast-container';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            const icons = {
+                success: '<svg class="toast-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+                error: '<svg class="toast-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+                warning: '<svg class="toast-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.533-2.694-1.533-3.464 0L3.44 16c-.77 1.533.192 3 1.732 3z"></path></svg>',
+                info: '<svg class="toast-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+            };
+
+            toast.innerHTML = `${icons[type] || icons.info}<div class="toast-content"><div class="toast-message">${message}</div></div>`;
+            container.appendChild(toast);
+
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        window.downloadFile = function(filename, content, contentType) {
+            const blob = new Blob([content], { type: contentType || 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        };
+
+        window.scrollToBottom = function(element) {
+            if (element?.scrollHeight) {
+                element.scrollTop = element.scrollHeight;
+            }
+        };
+
+        window.chatUnreadStorage = {
+            getLastSeenMessages() {
+                try {
+                    return window.localStorage?.getItem('chatLastSeen') || '{}';
+                } catch {
+                    return '{}';
+                }
+            },
+            setLastSeenMessages(payload) {
+                try {
+                    window.localStorage?.setItem('chatLastSeen', payload || '{}');
+                } catch {
+                }
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            AppUI.sidebar.checkScreenSize();
+            window.addEventListener('resize', () => AppUI.sidebar.checkScreenSize());
+
+            document.addEventListener('click', (e) => {
+                const wrapper = document.querySelector('.notification-wrapper');
+                const dropdown = document.getElementById('notificationDropdown');
+                if (wrapper && dropdown && !wrapper.contains(e.target)) {
+                    dropdown.classList.remove('open');
+                }
+            }, true);
+
+            document.addEventListener('click', (e) => {
+                if (e.target.matches('.nav-item') && window.innerWidth <= 768) {
+                    AppUI.sidebar.close();
+                }
+            });
+
+            const mobileFilterDropdown = document.getElementById('mobileFilterDropdown');
+            if (mobileFilterDropdown) {
+                mobileFilterDropdown.addEventListener('change', function() {
+                    const filterButtons = document.querySelectorAll('.filter-tab');
+                    for (const btn of filterButtons) {
+                        if (btn.textContent.toLowerCase().includes(this.value)) {
+                            AppUI.filter.gallery(this.value, btn);
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+
+        window.focusAndHighlightElement = function(elementId) {
+            if (!elementId) return;
+            const attemptFocus = (retries = 10, delay = 80) => {
+                const el = document.getElementById(elementId);
+                if (el) {
+                    el.focus({ preventScroll: false });
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    
+                    const card = el.closest('.child-entry-row-premium') || el.closest('.form-group') || el;
+                    if (card) {
+                        card.classList.remove('element-highlight-pulse');
+                        void card.offsetWidth;
+                        card.classList.add('element-highlight-pulse');
+                        setTimeout(() => {
+                            card.classList.remove('element-highlight-pulse');
+                        }, 2500);
+                    }
+                    return;
+                }
+                if (retries > 0) {
+                    setTimeout(() => attemptFocus(retries - 1, delay), delay);
+                }
+            };
+            attemptFocus(10, 80);
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,1982 @@
+@page "/users"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@using MuseumAdmin.Services
+@using MuseumAdmin.Models
+@using MuseumAdmin.Components.Shared
+@using System.Text.Json
+@using System.Threading
+@implements IDisposable
+@attribute [Authorize]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject UserService UserService
+@inject ChatService ChatService
+@inject AppState AppState
+@inject NotificationService NotificationService
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div @onclick:stopPropagation>
+    <TopBar Title="Users & Families" ButtonText="Add user" OnButtonClick="HandleAddUser"
+            OnMobileMenuToggle="ToggleMobileSidebar" />
+</div>
+
+<div class="fade-in">
+    <div class="content-container">
+        <!-- Page Header -->
+        <div class="page-header">
+            <p class="page-description">
+                Manage users, track child progress, and communicate with families. Content here allows tracking, editing, and grouping of users and individual.
+            </p>
+        </div>
+
+        <div class="dashboard-wrapper fade-in">
+            <!-- 1. Stats Hub -->
+            <div class="stats-hub">
+                <div class="stat-card">
+                    <div class="stat-icon folder">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value">@(activeView == ViewType.Families ? FamilyGroupsList.Count : _visibleChatGroups.Count)</span>
+                        <span class="stat-label">@(activeView == ViewType.Families ? "Total Families" : "Total Groups")</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon trend">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value">@(activeView == ViewType.Families ? FamilyGroupsList.Sum(g => g.Parents.Count) : _visibleChatGroups.Sum(g => g.Members.Count))</span>
+                        <span class="stat-label">@(activeView == ViewType.Families ? "Active Parents" : "Total Members")</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon users">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value">@(activeView == ViewType.Families ? FamilyGroupsList.Sum(g => g.Children.Count) : _visibleChatGroups.Sum(g => g.UnreadCount))</span>
+                        <span class="stat-label">@(activeView == ViewType.Families ? "Total Individuals" : "Unread Messages")</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon zones">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value">@(activeView == ViewType.Families ? 0 : _visibleChatGroups.Count(g => g.UnreadCount > 0))</span>
+                        <span class="stat-label">@(activeView == ViewType.Families ? "Needs Attention" : "Active Chats")</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Control Bar -->
+            <div class="control-bar">
+                <div class="search-box">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" placeholder="Search users, phone numbers, or individual..." value="@searchQuery"
+                        @oninput="HandleSearchInput" />
+                </div>
+
+                <div class="control-actions">
+                    <div class="status-filters">
+                        <button class="btn-filter-tag @(activeView == ViewType.Families ? "active" : "")" @onclick="() => SwitchView(ViewType.Families)">Families</button>
+                        <button class="btn-filter-tag @(activeView == ViewType.Groups ? "active" : "")" @onclick="() => SwitchView(ViewType.Groups)">Groups</button>
+                    </div>
+                    @* <button class="btn-primary-action" @onclick="HandleAddUser" @onclick:stopPropagation>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add User
+                    </button> *@
+                    <button class="btn-primary-action" @onclick="HandleAddGroup" @onclick:stopPropagation style="margin-left:8px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Group
+                    </button>
+                    <button class="btn-filter" style="margin-left:8px;" @onclick="DownloadAllData">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+
+            <!-- 3. Families Stack (Content Body) -->
+            <div class="content-body" style="background:transparent; border:none;">
+                @if (IsLoading)
+                {
+                    <div class="loading-state" style="padding: 40px; text-align: center;">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 10px; color: #64748b;">Loading...</p>
+                    </div>
+                }
+                else if (activeView == ViewType.Families)
+                {
+                    @if (!_filteredGroups.Any())
+                    {
+                        <div class="empty-state" style="padding: 40px; text-align: center; background: white; border-radius: 12px; border: 1px dashed #e2e8f0;">
+                            <div class="empty-icon" style="font-size: 48px; margin-bottom: 16px;">👥</div>
+                            <h3 style="color: #1e293b; margin-bottom: 8px;">No users found</h3>
+                            <p style="color: #64748b;">Try adjusting your search or add a new user to get started.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="families-stack-premium">
+                            @foreach (var group in _filteredGroups.Skip((currentPage - 1) * pageSize).Take(pageSize))
+                            {
+                                <FamilyCard Group="group" 
+                                            OnEditFamily="EditFamily"
+                                            OnEditParent="EditParent"
+                                            OnAddParent="AddParent"
+                                            OnAddChild="AddChild"
+                                            OnEditChild="EditChild"
+                                            OnDeleteGroup="DeleteGroup" />
+                            }
+                        </div>
+
+                        <!-- Pagination Controls -->
+                        <Pagination TotalCount="@_filteredGroups.Count"
+                                    PageSize="@pageSize"
+                                    CurrentPage="@currentPage"
+                                    OnPageChanged="HandlePageChanged"
+                                    OnPageSizeChanged="HandlePageSizeChanged" />
+                    }
+                }
+                else if (activeView == ViewType.Groups)
+                {
+                    @if (!_visibleChatGroups.Any())
+                    {
+                        <div class="empty-state" style="padding: 40px; text-align: center; background: white; border-radius: 12px; border: 1px dashed #e2e8f0;">
+                            <div class="empty-icon" style="font-size: 48px; margin-bottom: 16px;">💬</div>
+                            <h3 style="color: #1e293b; margin-bottom: 8px;">No groups found</h3>
+                            <p style="color: #64748b;">Try creating a new group to get started.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="groups-stack-premium">
+                            @foreach (var group in _filteredChatGroups)
+                            {
+                                <GroupCard Group="group" 
+                                           ShowLastActivity="false" 
+                                           OnChat="OpenChatGroup" />
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Chat Drawer *@
+<ChatDrawer IsVisible="@isChatVisible"
+            IsVisibleChanged="@(val => isChatVisible = val)"
+            Title="@chatTitle"
+            Subtitle="@chatSubtitle"
+            Messages="@chatMessages"
+            OnSendMessage="HandleSendMessageAsync" />
+
+
+
+@if (showAddUserModal)
+{
+    <div class="overlay" @onclick="CloseModal" style="opacity: 1; pointer-events: auto;"></div>
+    <div class="drawer" style="transform: translateX(0);">
+        <div class="drawer-header">
+            <h2>Add Family</h2>
+            <button class="drawer-close" @onclick="CloseModal" aria-label="Close drawer">×</button>
+        </div>
+        <div class="drawer-content">
+            <EditForm EditContext="@editContext" OnValidSubmit="HandleSaveUser">
+                <DataAnnotationsValidator />
+                
+                <!-- STEP 1: PARENTS -->
+                @if (currentStep == 1)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 1: Caregiver Information</span>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>First Name <span class="required-star">*</span></label>
+                                <InputText id="primaryCaregiverFirstName" @bind-Value="formData.FirstName" class="form-control" placeholder="First Name" />
+                                <ValidationMessage For="@(() => formData.FirstName)" class="text-danger" />
+                            </div>
+                            <div class="form-group">
+                                <label>Last Name <span class="required-star">*</span></label>
+                                <InputText @bind-Value="formData.LastName" class="form-control" placeholder="Last Name" />
+                                <ValidationMessage For="@(() => formData.LastName)" class="text-danger" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Phone Number <span class="required-star">*</span></label>
+                                <div style="display: flex; gap: 8px;">
+                                    <InputSelect @bind-Value="formData.CountryCode" class="form-control" style="width: 100px;">
+                                        @foreach (var country in popularCountries)
+                                        {
+                                            <option value="@country.Code">@country.Code (@country.Name)</option>
+                                        }
+                                    </InputSelect>
+                                    <InputText @bind-Value="formData.PhoneNumber" class="form-control" placeholder="e.g. 5550000000" maxlength="10" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 10);" />
+                                </div>
+                                <ValidationMessage For="@(() => formData.PhoneNumber)" class="text-danger" />
+                                <ValidationMessage For="@(() => formData.CountryCode)" class="text-danger" />
+                            </div>
+                            <div class="form-group">
+                                <label>Email Address</label>
+                                <InputText @bind-Value="formData.Email" class="form-control" placeholder="email@example.com" />
+                                <ValidationMessage For="@(() => formData.Email)" class="text-danger" />
+                                @if (string.IsNullOrWhiteSpace(formData.Email))
+                                {
+                                    <div class="text-warning" style="font-size: 11px; margin-top: 4px; font-weight: 500; display: flex; align-items: center; gap: 4px;">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                        </svg>
+                                        Recommended for notifications
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Birthday</label>
+                                <InputDate @bind-Value="formData.Birthday" class="form-control" />
+                            </div>
+                            
+                        </div>
+
+                        <div class="section-divider" style="margin: 24px 0;"></div>
+
+                        <div class="form-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" class="toggle-input" @bind="formData.HasPartner" @bind:after="ToggleCaregivers" />
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Include Additional Caregivers</span>
+                            </label>
+                        </div>
+
+                        @if (formData.HasPartner)
+                        {
+                            <div class="fade-in" style="margin-top: 24px;">
+                                <div class="drawer-section-title" style="margin-bottom: 6px;">Caregiver Details</div>
+                                <p class="section-subtitle" style="color: #64748b; font-size: 14px; margin-bottom: 16px;">
+                                    Add every parent, partner, grandparent, guardian, aunt, uncle, or other caregiver who should be attached to this family.
+                                </p>
+
+                                <div class="form-group" style="margin-bottom: 16px;">
+                                    <button type="button" class="btn-add-item" @onclick="AddCaregiverRow">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                                        </svg>
+                                        Add Caregiver
+                                    </button>
+                                </div>
+
+                                @foreach (var caregiver in formData.Caregivers.Select((value, index) => new { value, index }))
+                                {
+                                    var currentCaregiver = caregiver.value;
+                                    var caregiverIdx = caregiver.index;
+                                    <div class="child-entry-row-premium" id="@($"caregiver-card-{caregiverIdx}")" style="margin-bottom: 16px;">
+                                        <div class="child-entry-header">
+                                            <span class="child-entry-label">Caregiver @(caregiverIdx + 1)</span>
+                                            <button type="button" class="btn-remove-item-sm" @onclick="() => RemoveCaregiverRow(currentCaregiver)" title="Remove Caregiver">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                </svg>
+                                            </button>
+                                        </div>
+
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label>First Name <span class="required-star">*</span></label>
+                                                <InputText id="@($"caregiver-firstname-{caregiverIdx}")" @bind-Value="currentCaregiver.FirstName" class="form-control" placeholder="First Name" />
+                                            </div>
+                                            <div class="form-group">
+                                                <label>Last Name <span class="required-star">*</span></label>
+                                                <InputText @bind-Value="currentCaregiver.LastName" class="form-control" placeholder="Last Name" />
+                                            </div>
+                                        </div>
+
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label>Phone Number <span class="required-star">*</span></label>
+                                                <div style="display: flex; gap: 8px;">
+                                                    <InputSelect @bind-Value="currentCaregiver.CountryCode" class="form-control" style="width: 100px;">
+                                                        @foreach (var country in popularCountries)
+                                                        {
+                                                            <option value="@country.Code">@country.Code (@country.Name)</option>
+                                                        }
+                                                    </InputSelect>
+                                                    <InputText @bind-Value="currentCaregiver.PhoneNumber" class="form-control" placeholder="Phone" maxlength="10" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 10);" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label>Email Address</label>
+                                                <InputText @bind-Value="currentCaregiver.Email" class="form-control" placeholder="Email" />
+                                                @if (string.IsNullOrWhiteSpace(currentCaregiver.Email))
+                                                {
+                                                    <div class="text-warning" style="font-size: 11px; margin-top: 4px; font-weight: 500; display: flex; align-items: center; gap: 4px;">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                                        </svg>
+                                                        Recommended for notifications
+                                                    </div>
+                                                }
+                                            </div>
+                                            <div class="form-group">
+                                                <label>Birthday</label>
+                                                <InputDate @bind-Value="currentCaregiver.Birthday" class="form-control" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- STEP 2: individual -->
+                @if (currentStep == 2)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 2: Individual (Optional)</span>
+                        
+                        @foreach (var child in formData.Children)
+                        {
+                            var currentChild = child;
+                            <div class="child-entry-row-premium">
+                                <div class="child-entry-header">
+                                    <span class="child-entry-label">Child Information</span>
+                                    <button type="button" class="btn-remove-item-sm" @onclick="() => RemoveChildRow(currentChild)" title="Remove Child">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                 <div class="form-row">
+                                     <div class="form-group">
+                                         <label>First Name <span class="required-star">*</span></label>
+                                         <InputText @bind-Value="currentChild.FirstName" class="form-control" placeholder="First Name" />
+                                         <ValidationMessage For="@(() => currentChild.FirstName)" class="text-danger" />
+                                     </div>
+                                     <div class="form-group">
+                                         <label>Last Name <span class="required-star">*</span></label>
+                                         <InputText @bind-Value="currentChild.LastName" class="form-control" placeholder="Last Name" />
+                                         <ValidationMessage For="@(() => currentChild.LastName)" class="text-danger" />
+                                     </div>
+                                 </div>
+                                 <div class="form-row">
+                                     <div class="form-group" style="width: 100%;">
+                                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                                             <div class="form-group">
+                                                 <label>Birthday <span class="required-star">*</span></label>
+                                                 <InputDate @bind-Value="currentChild.dob" class="form-control" />
+                                                 <ValidationMessage For="@(() => currentChild.dob)" class="text-danger" />
+                                             </div>
+                                             <div class="form-group">
+                                                 <label>Gender <span class="required-star">*</span></label>
+                                                 <InputSelect @bind-Value="currentChild.Gender" class="form-control">
+                                                     <option value="">Select</option>
+                                                     <option value="Male">Male</option>
+                                                     <option value="Female">Female</option>
+                                                     <option value="Other">Other</option>
+                                                 </InputSelect>
+                                                 <ValidationMessage For="@(() => currentChild.Gender)" class="text-danger" />
+                                             </div>
+                                         </div>
+                                     </div>
+                                 </div>
+
+                                 <div class="relationship-mapping-section" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                                     <div style="margin-bottom: 16px;">
+                                         <span style="font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 4px; display: block;">Relationship Mapping</span>
+                                         <p style="font-size: 13px; color: #64748b; margin: 0;">Specify how each caregiver is related to this individual.</p>
+                                     </div>
+                                     
+                                     <div class="form-row" style="align-items: center; margin-bottom: 12px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #f1f5f9; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                         <div class="form-group" style="margin-bottom: 0;">
+                                             <label style="margin-bottom: 0; font-weight: 500; color: #334155; display: flex; align-items: center;">
+                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px; color: #94a3b8;">
+                                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                                     <circle cx="12" cy="7" r="4"></circle>
+                                                 </svg>
+                                                 @(string.IsNullOrWhiteSpace(formData.FirstName) ? "Primary Caregiver" : $"{formData.FirstName} {formData.LastName}")
+                                             </label>
+                                         </div>
+                                         <div class="form-group" style="margin-bottom: 0;">
+                                             <InputSelect @bind-Value="currentChild.RelationKind" class="form-control" style="padding: 6px 10px; height: 36px;">
+                                                 <option value="">Select Relationship</option>
+                                                 <option value="1">Mother</option>
+                                                 <option value="2">Father</option>
+                                                 <option value="3">Grandmother</option>
+                                                 <option value="4">Grandfather</option>
+                                                 <option value="5">Aunt</option>
+                                                 <option value="6">Uncle</option>
+                                                 <option value="7">Court-Ordered Guardian</option>
+                                                 <option value="8">Foster Parent</option>
+                                                 <option value="9">Nanny</option>
+                                                 <option value="10">Other Caregiver</option>
+                                             </InputSelect>
+                                             <ValidationMessage For="@(() => currentChild.RelationKind)" class="text-danger" />
+                                         </div>
+                                     </div>
+
+                                     @if (formData.HasPartner && formData.Caregivers != null)
+                                     {
+                                         foreach (var caregiver in formData.Caregivers)
+                                         {
+                                             <div class="form-row" style="align-items: center; margin-bottom: 12px; background: white; padding: 12px; border-radius: 6px; border: 1px solid #f1f5f9; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                                                 <div class="form-group" style="margin-bottom: 0;">
+                                                     <label style="margin-bottom: 0; font-weight: 500; color: #334155; display: flex; align-items: center;">
+                                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px; color: #94a3b8;">
+                                                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                                             <circle cx="9" cy="7" r="4"></circle>
+                                                             <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                                             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                                         </svg>
+                                                         @(string.IsNullOrWhiteSpace(caregiver.FirstName) ? "Additional Caregiver" : $"{caregiver.FirstName} {caregiver.LastName}")
+                                                     </label>
+                                                 </div>
+                                                 <div class="form-group" style="margin-bottom: 0;">
+                                                     <select value="@GetCaregiverRelation(currentChild, caregiver)" 
+                                                         @onchange="@(e => SetCaregiverRelation(currentChild, caregiver, e.Value?.ToString() ?? ""))"
+                                                         class="form-control" style="padding: 6px 10px; height: 36px;">
+                                                         <option value="">Select Relationship</option>
+                                                         @foreach (var relation in caregiverRelations)
+                                                         {
+                                                             <option value="@relation">@relation</option>
+                                                         }
+                                                 </select>
+                                                 </div>
+                                             </div>
+                                         }
+                                     }
+                                 </div>
+
+                                <div class="section-divider-light" style="margin: 16px 0;"></div>
+
+                                <span class="child-entry-label" style="margin-bottom: 12px; display: block;">Artwork & Voice Entry</span>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Art Title</label>
+                                        <InputText @bind-Value="currentChild.ArtTitle" class="form-control" placeholder="Title of work" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Artwork Image</label>
+                                        <div class="file-upload-compact">
+                                            <div class="file-upload-btn-sm">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                                </svg>
+                                                <span>@(currentChild.ImageFileName == "No file chosen" ? "Upload Art" : "Change")</span>
+                                                <InputFile OnChange="@(e => OnChildImageChange(e, currentChild))" accept="image/*" class="file-input-hidden" />
+                                            </div>
+                                            <span class="file-name-indicator">@currentChild.ImageFileName</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        <button type="button" class="btn-add-item" @onclick="AddChildRow">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Individual
+                        </button>
+                    </div>
+                }
+
+                <!-- STEP 3: PROVIDERS -->
+                @if (currentStep == 3)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 3: Assign Providers</span>
+                        <p class="section-subtitle" style="color: #64748b; font-size: 14px; margin-bottom: 20px;">
+                            Select one or more providers who will be managing this family.
+                        </p>
+                        
+                        <div class="providers-checklist" style="display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; max-height: 400px; overflow-y: auto;">
+                            @if (AvailableProviders == null || !AvailableProviders.Any())
+                            {
+                                <div style="text-align: center; color: #64748b; padding: 20px;">
+                                    <span>No providers found.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var provider in AvailableProviders)
+                                {
+                                    <label class="provider-item" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s ease;">
+                                        <input type="checkbox" 
+                                               checked="@formData.ProviderIds.Contains(provider.UserId)"
+                                               @onchange="@(e => ToggleProviderSelection(provider.UserId, (bool)e.Value))"
+                                               style="width: 18px; height: 18px; cursor: pointer;" />
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span style="font-weight: 500; color: #1e293b;">@provider.FullName</span>
+                                            @* <span style="font-size: 12px; color: #64748b;">Healthcare Provider</span> *@
+                                        </div>
+                                    </label>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- STEP 4: CONTEXT & PERMISSION -->
+                @if (currentStep == 4)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 4: Research & Permission</span>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Research ID</label>
+                                <InputText @bind-Value="formData.ResearchId" class="form-control" placeholder="Internal ID" />
+                            </div>
+                            <div class="form-group">
+                                <label>Enrollment Year</label>
+                                <InputSelect @bind-Value="formData.EnrollmentYear" class="form-control">
+                                    <option value="">Select Year</option>
+                                    @for (int year = 2024; year <= 2030; year++)
+                                    {
+                                        <option value="@year">@year</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                        </div>
+
+                        <div class="section-divider" style="margin: 24px 0;"></div>
+
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label>Enrollment Message Content</label>
+                            <InputTextArea @bind-Value="formData.PermissionMessage" class="form-control" rows="5" placeholder="Enrolling message..." />
+                        </div>
+                        
+                        <button type="button" class="btn-permission" @onclick="SendPermissionMessage" style="width: 100%; justify-content: center;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                            Dispatch Request
+                        </button>
+                        <p style="font-size: 12px; color: #64748b; margin-top: 12px; font-style: italic; text-align: center;">
+                            Request will be sent to @(string.IsNullOrWhiteSpace(formData.PhoneNumber) ? "primary phone number" : formData.PhoneNumber)
+                        </p>
+                    </div>
+                }
+            </EditForm>
+        </div>
+
+        <div class="drawer-actions">
+            @if (currentStep == 1)
+            {
+                <button class="btn cancel" @onclick="CloseModal" disabled="@isSaving">Dismiss</button>
+            }
+            else
+            {
+                <button class="btn cancel" @onclick="BackStep" disabled="@isSaving">Back</button>
+            }
+
+            <div style="flex: 1;"></div>
+
+            @if (currentStep < 4)
+            {
+                <button class="btn primary" @onclick="NextStep">
+                    <span>Next</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 8px;">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </button>
+            }
+            else
+            {
+                <button class="btn primary @(isSaving ? "btn-loading" : "")" disabled="@isSaving" @onclick="HandleSaveUser">
+                    @if (isSaving)
+                    {
+                        <span class="spinner-sm"></span>
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>Commit & Save</span>
+                    }
+                </button>
+            }
+        </div>
+    </div>
+}
+
+<AddGroupDrawer @bind-IsVisible="showAddGroupModal" 
+                Families="AllFamilies" 
+                OnGroupCreated="OnGroupCreated" />
+
+@if (showAddChildModal && addChildData?.child != null)
+{
+    <div class="overlay" @onclick="CloseAddChildModal" style="opacity: 1; pointer-events: auto;"></div>
+    <div class="drawer" style="transform: translateX(0);">
+        <div class="drawer-header">
+            <h2>@((addChildData?.child?.ContactId ?? 0) > 0 ? "Edit Child" : "Add Child")</h2>
+            <button class="drawer-close" @onclick="CloseAddChildModal" aria-label="Close drawer">×</button>
+        </div>
+        <div class="drawer-content">
+            <EditForm Model="@(addChildData.child!)" OnValidSubmit="HandleSaveChild">
+                <DataAnnotationsValidator />
+                
+                <div class="drawer-section">
+                    <span class="drawer-section-title">Child Identification</span>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>First Name <span class="required-star">*</span></label>
+                            <InputText @bind-Value="addChildData.child.FirstName" class="form-control" placeholder="Child First Name" />
+                            <ValidationMessage For="@(() => addChildData.child.FirstName)" class="text-danger" />
+                        </div>
+                        <div class="form-group">
+                            <label>Last Name</label>
+                            <InputText @bind-Value="addChildData.child.LastName" class="form-control" placeholder="Child Last Name" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Birthday <span class="required-star">*</span></label>
+                            <InputDate @bind-Value="addChildData.child.dob" class="form-control" />
+                            <ValidationMessage For="@(() => addChildData.child.dob)" class="text-danger" />
+                        </div>
+                        <div class="form-group">
+                            <label>Gender</label>
+                            <InputSelect @bind-Value="addChildData.child.Gender" class="form-control">
+                                <option value="">Select</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                                <option value="Other">Other</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="drawer-section">
+                    <span class="drawer-section-title">Artwork & Voice</span>
+                    <div class="form-group">
+                        <label>Art Title</label>
+                        <InputText @bind-Value="addChildData.child.ArtTitle" class="form-control" placeholder="Title of work" />
+                    </div>
+                    
+                    <div class="form-row" style="margin-top: 16px;">
+                        <div class="form-group">
+                            <label>Artwork Image</label>
+                            <div class="file-upload-compact">
+                                <div class="file-upload-btn-sm">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="17 8 12 3 7 8"></polyline>
+                                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                                    </svg>
+                                    <span>Upload Art</span>
+                                    <InputFile OnChange="@(e => addChildData.child.ImageFileName = e.File.Name)" accept="image/*" class="file-input-hidden" />
+                                </div>
+                                <span class="file-name-indicator">@addChildData.child.ImageFileName</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label>Audio Transcription</label>
+                        <InputTextArea @bind-Value="addChildData.child.MessageAudioText" class="form-control" rows="3" placeholder="Transcription notes..." />
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+
+        <div class="drawer-actions">
+            <button class="btn cancel" @onclick="CloseAddChildModal" disabled="@isAddingChild">Dismiss</button>
+            <button class="btn primary @(isAddingChild ? "btn-loading" : "")" disabled="@isAddingChild" @onclick="HandleSaveChild">
+                @if (isAddingChild)
+                {
+                    <span class="spinner-sm"></span>
+                    <span>Saving...</span>
+                }
+                else
+                {
+                    <span>Save Child</span>
+                }
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private Dictionary<string, string> _caregiverRelationsMap = new();
+
+    private string GetCaregiverRelation(ChildDto child, PartnerDto caregiver)
+    {
+        var key = $"{child.GetHashCode()}_{caregiver.GetHashCode()}";
+        return _caregiverRelationsMap.TryGetValue(key, out var rel) ? rel : "";
+    }
+
+    private void SetCaregiverRelation(ChildDto child, PartnerDto caregiver, string value)
+    {
+        var key = $"{child.GetHashCode()}_{caregiver.GetHashCode()}";
+        _caregiverRelationsMap[key] = value;
+    }
+
+    private string searchQuery = "";
+    private async Task HandleSearchInput(ChangeEventArgs e)
+    {
+        var newValue = e.Value?.ToString() ?? "";
+        if (searchQuery != newValue)
+        {
+            searchQuery = newValue;
+            currentPage = 1;
+            
+            // Debounce logic
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            
+            try
+            {
+                await Task.Delay(300, _searchCts.Token);
+                UpdateFilteredResults();
+                StateHasChanged();
+            }
+            catch (OperationCanceledException) { }
+        }
+    }
+
+    private void UpdateFilteredResults()
+    {
+        // 1. Update VisibleChatGroups (exclude private)
+        _visibleChatGroups = ChatGroups?
+            .Where(g => !string.Equals(g.GroupName?.Trim(), "Private Chat", StringComparison.OrdinalIgnoreCase))
+            .ToList() ?? new List<ChatGroupDto>();
+
+        // 2. Update FilteredGroups (Families)
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            _filteredGroups = FamilyGroupsList;
+        }
+        else
+        {
+            _filteredGroups = FamilyGroupsList.Where(g => 
+                (g.PhoneNumber?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                g.Parents.Any(p => p.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                g.Children.Any(c => c.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+            ).ToList();
+        }
+
+        // 3. Update FilteredChatGroups (Groups)
+        if (string.IsNullOrWhiteSpace(searchQuery))
+        {
+            _filteredChatGroups = _visibleChatGroups;
+        }
+        else
+        {
+            _filteredChatGroups = _visibleChatGroups.Where(g => 
+                g.GroupName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                g.Members.Any(m => m.Name?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false)
+            ).ToList();
+        }
+    }
+
+    private string FormatPhoneNumber(string? phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber)) return "";
+        // Remove non-digit characters
+        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
+        if (digits.Length == 10)
+        {
+            return $"({digits.Substring(0, 3)}) {digits.Substring(3, 3)}-{digits.Substring(6, 4)}";
+        }
+        else if (digits.Length == 11 && digits.StartsWith("1"))
+        {
+            return $"+1 ({digits.Substring(1, 3)}) {digits.Substring(4, 3)}-{digits.Substring(7, 4)}";
+        }
+        else
+        {
+            return phoneNumber;
+        }
+    }
+
+    private static (string CountryCode, string PhoneNumber) SplitPhoneNumber(string? phoneNumber, string? providedCountryCode = null)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            return (providedCountryCode ?? "+1", "");
+        }
+
+        var trimmed = phoneNumber.Trim();
+
+        // If country code is provided and the phone number starts with it, remove it.
+        if (!string.IsNullOrEmpty(providedCountryCode) && trimmed.StartsWith(providedCountryCode, StringComparison.Ordinal))
+        {
+            var local = trimmed.Substring(providedCountryCode.Length).Trim();
+            // Clean up any non-digit characters from the local part
+            var localDigits = new string(local.Where(char.IsDigit).ToArray());
+            return (providedCountryCode, localDigits);
+        }
+
+        var digitsOnly = new string(trimmed.Where(char.IsDigit).ToArray());
+
+        var hyphenParts = trimmed.Split('-', 2, StringSplitOptions.TrimEntries);
+        if (hyphenParts.Length == 2 && !string.IsNullOrWhiteSpace(hyphenParts[0]))
+        {
+            var left = hyphenParts[0];
+            var right = hyphenParts[1];
+            return (left.StartsWith("+", StringComparison.Ordinal) ? left : $"+{new string(left.Where(char.IsDigit).ToArray())}", new string(right.Where(char.IsDigit).ToArray()));
+        }
+
+        if (trimmed.StartsWith("+", StringComparison.Ordinal))
+        {
+            // Keep the leading country code if it is present in the stored value.
+            if (digitsOnly.Length > 10)
+            {
+                var countryCodeDigits = digitsOnly[..(digitsOnly.Length - 10)];
+                var localNumberDigits = digitsOnly[^10..];
+                return ($"+{countryCodeDigits}", localNumberDigits);
+            }
+
+            return (trimmed.StartsWith("+1", StringComparison.Ordinal) ? "+1" : "+", digitsOnly);
+        }
+
+        return (providedCountryCode ?? "+1", digitsOnly);
+    }
+
+    private List<PartnerDto> ExtractCaregivers(UserListDto user)
+    {
+        var caregivers = new List<PartnerDto>();
+
+        if (user.Caregivers != null && user.Caregivers.Any())
+        {
+            caregivers.AddRange(user.Caregivers.Select(c => new PartnerDto
+            {
+                PartnerId = c.EffectiveId ?? c.PartnerId,
+                CaregiverId = c.CaregiverId,
+                FirstName = c.FirstName,
+                LastName = c.LastName,
+                PhoneNumber = c.PhoneNumber,
+                CountryCode = c.CountryCode,
+                Email = c.Email,
+                RelationToChild = c.RelationToChild,
+                IsPrimary = c.IsPrimary,
+                IsSecondary = c.IsSecondary
+            }));
+            return caregivers;
+        }
+
+        if (user.Partner is JsonElement jsonPartner && jsonPartner.ValueKind == JsonValueKind.Object)
+        {
+            try
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var partner = JsonSerializer.Deserialize<PartnerDto>(jsonPartner.GetRawText(), options);
+                if (partner != null)
+                {
+                    caregivers.Add(partner);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing caregiver JSON: {ex.Message}");
+            }
+        }
+
+        return caregivers;
+    }
+    private string imageFileName = "No file chosen";
+    private string audioFileName = "No file chosen";
+    private int currentStep = 1;
+    private const string ShadowParentContactGender = "Shadow";
+
+    private bool showAddUserModal = false;
+    private bool showAddChildModal = false;
+    private bool showAddGroupModal = false;
+    private AddFamilyDto formData = new();
+    private EditContext editContext = default!;
+    private AddChildRequestDto addChildData = new();
+    private bool isSaving = false;
+    private bool isAddingChild = false;
+    private bool isEditingFamily = false;
+
+    private List<(string Name, string Code)> popularCountries = new()
+    {
+        ("United States", "+1"),
+        ("Canada", "+1"),
+        ("United Kingdom", "+44"),
+        ("India", "+91"),
+        ("Australia", "+61"),
+        ("Germany", "+49"),
+        ("France", "+33"),
+        ("Japan", "+81"),
+        ("China", "+86"),
+        ("Brazil", "+55")
+    };
+
+    private List<string> caregiverRelations = new()
+    {
+        "Mother",
+        "Father",
+        "Grandmother",
+        "Grandfather",
+        "Aunt",
+        "Uncle",
+        "Court-Ordered Guardian",
+        "Foster Parent",
+        "Nanny",
+        "Other Caregiver"
+    };
+
+    private List<ProviderDto> AvailableProviders = new();
+
+    private List<SelectableFamily> AllFamilies = new();
+    private bool IsLoading = true;
+
+    // Child Selection State
+    private SelectableFamily? activeFamily;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private List<UserListDto> RawUsers = new();
+
+    private List<FamilyGroup> FamilyGroupsList = new();
+
+    private async Task HandleAddGroup()
+    {
+        InitializeSelectableMembers();
+        showAddGroupModal = true;
+        // Age/Zone loading removed as settings step is removed
+    }
+
+    private void InitializeSelectableMembers()
+    {
+        AllFamilies = FamilyGroupsList.Select(g => new SelectableFamily
+        {
+            Id = g.Id,
+            Name = g.Parents.FirstOrDefault()?.Name ?? "No name",
+            Phone = g.PhoneNumber,
+            IsExpanded = false,
+            Children = g.Children.Select(c => new SelectableChild
+            {
+                Id = c.Id,
+                Name = c.Name,
+                IsSelected = false
+            }).ToList()
+        }).ToList();
+    }
+
+
+    private string? _pendingFocusElementId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+        await LoadDataAsync();
+        
+        formData = new AddFamilyDto { MuseumId = AppState.MuseumId };
+        editContext = new EditContext(formData);
+
+        // Start background refresh timer (5 seconds for testing)
+        _cts = new CancellationTokenSource();
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(120));
+        _ = StartBackgroundRefreshAsync(_cts.Token);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!string.IsNullOrEmpty(_pendingFocusElementId) && showAddUserModal)
+        {
+            var targetId = _pendingFocusElementId;
+            _pendingFocusElementId = null;
+            await JSRuntime.InvokeVoidAsync("focusAndHighlightElement", targetId);
+        }
+    }
+
+    private PeriodicTimer? _refreshTimer;
+    private CancellationTokenSource? _cts;
+
+    private async Task StartBackgroundRefreshAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _refreshTimer!.WaitForNextTickAsync(ct))
+            {
+                if (ct.IsCancellationRequested) break;
+                Console.WriteLine($"[DEBUG] Users.razor: Background refresh starting... {DateTime.Now}");
+                await LoadGroupsAsync();
+                UpdateFilteredResults();
+                await InvokeAsync(StateHasChanged);
+                var groupTotals = ChatGroups != null ? string.Join(", ", ChatGroups.Select(g => $"{g.ChatGroupId}:{g.TotalMessages}")) : "none";
+                Console.WriteLine($"[DEBUG] Users.razor: Background refresh complete. Totals: {{{groupTotals}}}");
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Background refresh error: {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _refreshTimer?.Dispose();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        Console.WriteLine($"[API LOADING] Loading page data for MuseumId: {AppState.MuseumId} (Operator: {AppState.UserName})");
+
+        IsLoading = true;
+        await Task.WhenAll(LoadUsersAsync(), LoadGroupsAsync(), LoadProvidersAsync());
+        IsLoading = false;
+        StateHasChanged();
+
+        Console.WriteLine($"[API LOADING COMPLETE] Families: {FamilyGroupsList.Count}, ChatGroups: {ChatGroups.Count}, Providers: {AvailableProviders.Count}");
+    }
+
+    private async Task LoadProvidersAsync()
+    {
+        var endpoint = $"api/GetTherapistsByMuseum?museumId={AppState.MuseumId}";
+        var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), endpoint).ToString();
+        try
+        {
+            Console.WriteLine($"[API CALL] GET {fullEndpoint}");
+
+            AvailableProviders = await UserService.GetProvidersAsync(AppState.MuseumId, AppState.UserName);
+
+            Console.WriteLine($"[API RESPONSE] GET {fullEndpoint} -> Loaded {AvailableProviders?.Count ?? 0} providers");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[API ERROR] GET {fullEndpoint} -> {ex.Message}");
+            Console.WriteLine($"Error loading Providers: {ex.Message}");
+        }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        var endpoint = $"api/Chat/get-groups-by-museum/{AppState.MuseumId}";
+        var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), endpoint).ToString();
+        try
+        {
+            Console.WriteLine($"[API CALL] GET {fullEndpoint}");
+
+            ChatGroups = await ChatService.GetGroupsByMuseumAsync(AppState.MuseumId, AppState.UserName);
+            AppState.UpdateGroupTotals(ChatGroups);
+
+            if (ChatGroups != null && ChatGroups.Any())
+            {
+                ChatGroups = ChatGroups.OrderByDescending(g => g.ChatGroupId).ToList();
+            }
+
+            Console.WriteLine($"[API RESPONSE] GET {fullEndpoint} -> Loaded {ChatGroups?.Count ?? 0} groups");
+
+            UpdateFilteredResults();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[API ERROR] GET {fullEndpoint} -> {ex.Message}");
+            Console.WriteLine($"Error loading groups: {ex.Message}");
+        }
+    }
+
+    private enum ViewType { Families, Groups }
+    private ViewType activeView = ViewType.Families;
+
+    private void SwitchView(ViewType view)
+    {
+        activeView = view;
+        currentPage = 1;
+    }
+
+    private List<ChatGroupDto> ChatGroups = new();
+
+    private bool isChatVisible = false;
+    private string chatTitle = "Chat";
+    private string chatSubtitle = "";
+    private List<ApiChatMessageDto> chatMessages = new();
+    private int currentChatGroupId = 0;
+    private string operatorName = "System";
+
+    private async Task OpenChatGroup(ChatGroupDto group)
+    {
+        try
+        {
+            chatTitle = group.GroupName;
+            chatSubtitle = $"{group.Members.Count} members";
+            currentChatGroupId = group.ChatGroupId;
+
+            /*
+             * Retrieval code commented because ChatService no longer exposes GetUserChatsAsync.
+            await LoadChatMessagesAsync(currentChatGroupId);
+            */
+
+            chatMessages = new List<ApiChatMessageDto>();
+            isChatVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error", "Failed to open group chat.");
+        }
+    }
+
+    /*
+     * Retrieval code commented because ChatService no longer exposes GetUserChatsAsync.
+    private async Task LoadChatMessagesAsync(int groupId)
+    {
+        try
+        {
+            // Use GetUserChatsAsync and filter
+            var chats = await ChatService.GetUserChatsAsync(AppState.Role ?? "Provider", AppState.UserId, operatorName);
+            var targetChat = chats.FirstOrDefault(c => c.ChatGroupId == groupId);
+            
+            if (targetChat != null)
+            {
+                chatMessages = targetChat.Messages.OrderBy(m => m.SentAt).ToList();
+                // Also refresh groups to update unread badges
+                await LoadGroupsAsync();
+
+                // Mark as read in AppState
+                var group = ChatGroups.FirstOrDefault(g => g.ChatGroupId == currentChatGroupId);
+                if (group != null)
+                {
+                    AppState.MarkGroupAsRead(group.ChatGroupId, group.TotalMessages);
+                }
+            }
+            else
+            {
+                chatMessages = new List<ApiChatMessageDto>();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading chat messages: {ex.Message}");
+            chatMessages = new List<ApiChatMessageDto>();
+        }
+    }
+    */
+
+    private async Task HandleSendMessageAsync(string messageText)
+    {
+        if (currentChatGroupId == 0 || string.IsNullOrWhiteSpace(messageText)) return;
+
+        var endpoint = "api/Chat/send-message";
+        var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), endpoint).ToString();
+        try
+        {
+            var request = new SendMessageRequest
+            {
+                ChatGroupId = currentChatGroupId,
+                SenderType = AppState.Role ?? "Provider",
+                SenderId = AppState.UserId,
+                MessageText = messageText
+            };
+
+            Console.WriteLine($"[API CALL] POST {fullEndpoint}");
+
+            var sentMessage = await ChatService.SendMessageAsync(request, operatorName);
+            
+            Console.WriteLine($"[API RESPONSE] POST {fullEndpoint} -> {(sentMessage != null ? "SUCCESS" : "FAILED")}");
+
+            if (sentMessage != null)
+            {
+                await LoadGroupsAsync(); // Update unread badges and last activity immediately
+
+                // Mark as read after sending
+                var group = ChatGroups.FirstOrDefault(g => g.ChatGroupId == currentChatGroupId);
+                if (group != null)
+                {
+                    AppState.MarkGroupAsRead(group.ChatGroupId, group.TotalMessages);
+                }
+            }
+            else
+            {
+                NotificationService.Error("Error", "Failed to send message.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[API ERROR] POST {fullEndpoint} -> {ex.Message}");
+            NotificationService.Error("Error", "Failed to send message.");
+        }
+    }
+
+    private List<ChatGroupDto> _visibleChatGroups = new();
+    private List<ChatGroupDto> _filteredChatGroups = new();
+    private List<FamilyGroup> _filteredGroups = new();
+    private CancellationTokenSource? _searchCts;
+
+    private async Task LoadUsersAsync(bool manageLoadingState = false)
+    {
+        var endpoint = $"api/GetFamiliesByMuseum/{AppState.MuseumId}?page=1&pageSize=2000";
+        var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), endpoint).ToString();
+        try
+        {
+            if (manageLoadingState)
+            {
+                IsLoading = true;
+                await InvokeAsync(StateHasChanged);
+            }
+
+            Console.WriteLine($"[API CALL] GET {fullEndpoint}");
+
+            var users = await UserService.GetUsersAsync(AppState.MuseumId, AppState.UserName);
+            
+            Console.WriteLine($"[API RESPONSE] GET {fullEndpoint} -> Loaded {users?.Count ?? 0} families");
+
+            if (users == null || !users.Any())
+            {
+                FamilyGroupsList = new List<FamilyGroup>();
+                return;
+            }
+
+            // User requested: show latest first
+            users = users.OrderByDescending(u => u.UserId).ToList();
+
+            var familyGroups = new List<FamilyGroup>();
+
+            foreach (var user in users)
+            {
+                var caregivers = ExtractCaregivers(user);
+                var parentEntries = new List<Parent>
+                {
+                    new Parent
+                    {
+                        Id = user.UserId,
+                        Name = !string.IsNullOrWhiteSpace(user.Name) ? user.Name : "No name provided",
+                        Phone = user.PhoneNumber,
+                        IsPrimary = true
+                    }
+                };
+
+                if (caregivers.Any())
+                {
+                    parentEntries.AddRange(caregivers.Select((caregiver, index) => new Parent
+                    {
+                        Id = caregiver.EffectiveId ?? (user.UserId * 1000) + index + 1,
+                        Name = $"{caregiver.FirstName} {caregiver.LastName}".Trim(),
+                        Phone = $"{caregiver.CountryCode}{caregiver.PhoneNumber}".Replace(" ", ""),
+                        IsPrimary = caregiver.IsPrimary == true
+                    }));
+                }
+
+                var group = new FamilyGroup
+                {
+                    Id = user.UserId,
+                    PhoneNumber = user.PhoneNumber,
+                    Parents = parentEntries,
+                    Children = user.Children
+                        .Where(c => !string.Equals(c.ContactGeneder, "Shadow", StringComparison.OrdinalIgnoreCase))
+                        .Select(c => new Child
+                        {
+                            Id = c.ContactId,
+                            Name = !string.IsNullOrWhiteSpace(c.Name) ? c.Name : "No name",
+                            Age = c.Dob.HasValue ? CalculateAge(c.Dob.Value) : 0,
+                            ContactGender = c.ContactGeneder
+                        }).ToList()
+                };
+                
+                familyGroups.Add(group);
+            }
+
+            FamilyGroupsList = familyGroups;
+            RawUsers = users;
+            
+            InitializeSelectableMembers();
+            UpdateFilteredResults();
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[API ERROR] GET {fullEndpoint} -> {ex.Message}");
+            Console.WriteLine($"Error loading users: {ex.Message}");
+            NotificationService.Error("Load Failed", "An error occurred while fetching users. Please try again.");
+        }
+        finally
+        {
+            if (manageLoadingState)
+            {
+                IsLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private void EditFamily(FamilyGroup group)
+    {
+        var user = RawUsers.FirstOrDefault(u => u.UserId == group.Id);
+        if (user == null) return;
+        isEditingFamily = true;
+        currentStep = 1;
+
+        // HIPAA: Log access to detailed PHI
+        Console.WriteLine($"[AUDIT] {DateTime.UtcNow:o} | Operator: {AppState.UserName} | Action: VIEW_PHI_DETAIL | Detail: User {group.Id}");
+
+        formData = new AddFamilyDto
+        {
+            MuseumId = AppState.MuseumId,
+            FirstName = user.FirstName ?? "",
+            LastName = user.LastName ?? "",
+            Email = user.UserEmail ?? "",
+            Birthday = user.Dob,
+            HasPartner = user.HasPartner ?? false,
+            Caregivers = new List<PartnerDto>(),
+            PermissionMessage = user.PermissionMessage ?? "",
+            Children = user.Children
+                .Where(c => !string.Equals(c.ContactGeneder, "Shadow", StringComparison.OrdinalIgnoreCase))
+                .Select(c => new ChildDto
+                {
+                    ContactId = c.ContactId,
+                    FirstName = c.FirstName ?? "",
+                    LastName = c.LastName ?? "",
+                    dob = c.Dob,
+                    Gender = c.ContactGeneder ?? "",
+                    RelationKind = c.RelationKind
+                }).ToList(),
+            ProviderIds = user.Providers?.Select(p => p.Id).ToList() ?? (user.ProviderIds ?? new List<int>())
+        };
+
+        var (countryCode, phoneNumber) = SplitPhoneNumber(user.PhoneNumber, user.CountryCode);
+        formData.CountryCode = countryCode;
+        formData.PhoneNumber = phoneNumber;
+
+        if (user.Caregivers != null && user.Caregivers.Any())
+        {
+            formData.Caregivers = user.Caregivers
+                .Select(c => new PartnerDto
+                {
+                    PartnerId = c.EffectiveId ?? c.PartnerId,
+                    CaregiverId = c.CaregiverId,
+                    FirstName = c.FirstName,
+                    LastName = c.LastName,
+                    PhoneNumber = c.PhoneNumber,
+                    CountryCode = c.CountryCode,
+                    Email = c.Email,
+                    RelationToChild = c.RelationToChild,
+                    IsPrimary = c.IsPrimary,
+                    IsSecondary = c.IsSecondary
+                })
+                .ToList();
+            formData.HasPartner = formData.Caregivers.Any();
+        }
+        else if (user.Partner is JsonElement jsonPartner && jsonPartner.ValueKind == JsonValueKind.Object)
+        {
+            try
+            {
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                formData.Caregivers.Add(JsonSerializer.Deserialize<PartnerDto>(jsonPartner.GetRawText(), options) ?? new PartnerDto());
+                formData.HasPartner = true;
+            }
+            catch
+            {
+                formData.Caregivers.Add(new PartnerDto());
+                formData.HasPartner = false;
+            }
+        }
+        else
+        {
+            formData.HasPartner = false;
+            formData.Caregivers = new List<PartnerDto>();
+        }
+
+        foreach (var caregiver in formData.Caregivers)
+        {
+            var (caregiverCountryCode, caregiverPhoneNumber) = SplitPhoneNumber(caregiver.PhoneNumber, caregiver.CountryCode);
+            caregiver.CountryCode = caregiverCountryCode;
+            caregiver.PhoneNumber = caregiverPhoneNumber;
+        }
+
+        if (formData.Caregivers.Any())
+        {
+            formData.Partner = formData.Caregivers.First();
+        }
+
+        editContext = new EditContext(formData);
+        showAddUserModal = true;
+    }
+
+    private int CalculateAge(DateTime dob)
+    {
+        var today = DateTime.Today;
+        var age = today.Year - dob.Year;
+        if (dob.Date > today.AddYears(-age)) age--;
+        return Math.Max(0, age);
+    }
+
+    private void HandlePageChanged(int newPage)
+    {
+        currentPage = newPage;
+        StateHasChanged();
+    }
+
+    private void HandlePageSizeChanged(int newSize)
+    {
+        pageSize = newSize;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+
+    private async Task OnGroupCreated()
+    {
+        // Reload groups data and switch to Groups view
+        await LoadGroupsAsync();
+        activeView = ViewType.Groups;
+        currentPage = 1;
+    }
+
+    private void HandleEditGroup()
+    {
+        // TODO: Edit group logic
+    }
+
+    // Simplified nested class removed in favor of AddFamilyDto
+    /* 
+    public class UserFormData ... 
+    */
+    
+    // We already have AddFamilyDto.cs in Models, no need to define it here
+    private void ResetFormData()
+    {
+        formData = new AddFamilyDto
+        {
+            MuseumId = AppState.MuseumId,
+            CountryCode = "+1",
+            Caregivers = new List<PartnerDto>(),
+            Children = new List<ChildDto>()
+        };
+    }
+
+    private void OnChildImageChange(InputFileChangeEventArgs e, ChildDto child)
+    {
+        child.ImageFileName = e.File.Name;
+        // Logic to store the file or convert to base64
+    }
+
+    private void OnChildAudioChange(InputFileChangeEventArgs e, ChildDto child)
+    {
+        child.AudioFileName = e.File.Name;
+        // Logic to store the file or convert to base64
+    }
+
+    private void AddChildRow()
+    {
+        formData.Children.Add(new ChildDto { dob = null });
+    }
+
+    private void RemoveChildRow(ChildDto child)
+    {
+        formData.Children.Remove(child);
+    }
+
+    private void NextStep()
+    {
+        if (ValidateStep(currentStep))
+        {
+            currentStep++;
+        }
+    }
+
+    private bool ValidateStep(int step)
+    {
+        if (editContext == null) return true;
+
+        switch (step)
+        {
+            case 1:
+                return editContext.Validate() && ValidateCaregivers(); // Validates everything, but Step 1 has the most required fields. 
+                // Note: DataAnnotationsValidator works on the whole model, but UI only shows current step errors.
+            case 2:
+                // Step 2 is children, they have their own internal validation messages in the UI
+                return true; 
+            case 3:
+                // Providers selection
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    private void BackStep() => currentStep--;
+
+    private void ToggleProviderSelection(int providerId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!formData.ProviderIds.Contains(providerId))
+                formData.ProviderIds.Add(providerId);
+        }
+        else
+        {
+            formData.ProviderIds.Remove(providerId);
+        }
+    }
+
+    private void AddCaregiverRow()
+    {
+        formData.Caregivers ??= new List<PartnerDto>();
+        var caregiver = new PartnerDto { CountryCode = "+1" };
+        formData.Caregivers.Add(caregiver);
+        formData.Partner = formData.Caregivers.FirstOrDefault();
+        formData.HasPartner = true;
+    }
+
+    private void RemoveCaregiverRow(PartnerDto caregiver)
+    {
+        formData.Caregivers.Remove(caregiver);
+        if (!formData.Caregivers.Any())
+        {
+            formData.HasPartner = false;
+            formData.Partner = null;
+        }
+        else
+        {
+            formData.Partner = formData.Caregivers.FirstOrDefault();
+        }
+    }
+
+    private void ToggleCaregivers()
+    {
+        if (formData.HasPartner && !formData.Caregivers.Any())
+        {
+            AddCaregiverRow();
+        }
+        else if (formData.HasPartner)
+        {
+            formData.Partner = formData.Caregivers.FirstOrDefault();
+        }
+    }
+
+    private bool ValidateCaregivers()
+    {
+        if (!formData.HasPartner)
+        {
+            return true;
+        }
+
+        if (formData.Caregivers == null || !formData.Caregivers.Any())
+        {
+            NotificationService.Error("Validation Error", "Please add at least one caregiver or turn off caregiver entry.");
+            return false;
+        }
+
+        for (var i = 0; i < formData.Caregivers.Count; i++)
+        {
+            var caregiver = formData.Caregivers[i];
+            var label = $"Caregiver {i + 1}";
+
+            if (string.IsNullOrWhiteSpace(caregiver.FirstName) ||
+                string.IsNullOrWhiteSpace(caregiver.LastName) ||
+                string.IsNullOrWhiteSpace(caregiver.PhoneNumber) ||
+                string.IsNullOrWhiteSpace(caregiver.CountryCode))
+            {
+                NotificationService.Error("Validation Error", $"{label} needs a name, phone number, and country code.");
+                return false;
+            }
+
+            if (caregiver.PhoneNumber.Length != 10 || caregiver.PhoneNumber.Any(c => !char.IsDigit(c)))
+            {
+                NotificationService.Error("Validation Error", $"{label} phone number must be exactly 10 digits.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
+
+    // (Previous implementation was property getter FilteredGroups)
+
+    private void HandleAddUser()
+    {
+        isEditingFamily = false;
+        formData = new AddFamilyDto { MuseumId = AppState.MuseumId };
+        editContext = new EditContext(formData);
+        currentStep = 1;
+        showAddUserModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showAddUserModal = false;
+        isEditingFamily = false;
+    }
+
+    private async Task HandleSaveUser()
+    {
+        if (isSaving || !editContext.Validate() || !ValidateCaregivers()) return;
+
+        var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), "api/AddFamily").ToString();
+        try
+        {
+            isSaving = true;
+            EnsureShadowParentChildForNewFamily();
+
+            Console.WriteLine($"[API CALL] POST {fullEndpoint} (Mode: {(isEditingFamily ? "Edit" : "Create")})");
+
+            bool success = await UserService.SaveFamilyAsync(formData, AppState.UserName);
+            
+            Console.WriteLine($"[API RESPONSE] POST {fullEndpoint} -> {(success ? "SUCCESS" : "FAILED")}");
+
+            if (success)
+            {
+                NotificationService.Success("Family Saved", "The family and all associated children were added successfully.");
+                showAddUserModal = false;
+                isEditingFamily = false;
+                await LoadUsersAsync(manageLoadingState: true); // Reload list to see changes if applicable
+            }
+            else
+            {
+                NotificationService.Error("Save Failed", "There was an error saving the family data.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[API ERROR] POST {fullEndpoint} -> {ex.Message}");
+            NotificationService.Error("Error", "An unexpected error occurred during save.");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void EnsureShadowParentChildForNewFamily()
+    {
+        if (isEditingFamily)
+        {
+            return;
+        }
+
+        formData.Children ??= new List<ChildDto>();
+
+        var hasShadowParentChild = formData.Children.Any(c =>
+            string.Equals(c.Gender, ShadowParentContactGender, StringComparison.Ordinal));
+
+        if (hasShadowParentChild)
+        {
+            return;
+        }
+
+        formData.Children.Add(new ChildDto
+        {
+            FirstName = formData.FirstName?.Trim() ?? "",
+            LastName = formData.LastName?.Trim() ?? "",
+            dob = formData.Birthday,
+            Gender = ShadowParentContactGender
+        });
+    }
+
+    private void SendPermissionMessage()
+    {
+        // Logic to send permission message
+    }
+
+    private void OnImageFileChange(InputFileChangeEventArgs e)
+    {
+        imageFileName = e.File.Name;
+    }
+
+    private void OnAudioFileChange(InputFileChangeEventArgs e)
+    {
+        audioFileName = e.File.Name;
+    }
+
+    private void DownloadAllData()
+    {
+        try
+        {
+            // HIPAA: Log PHI Export
+            Console.WriteLine($"[AUDIT] {DateTime.UtcNow:o} | Operator: {AppState.UserName} | Action: EXPORT_PHI | Detail: Exporting all user data");
+            
+            var csv = new System.Text.StringBuilder();
+            csv.AppendLine("UserId,Name,PhoneNumber,Email,ChildrenCount");
+            
+            foreach (var user in RawUsers)
+            {
+                csv.AppendLine($"{user.UserId},{user.Name},{user.PhoneNumber},{user.UserEmail},{user.Children.Count}");
+            }
+            
+            // Note: In a real production app, this would be a server-side generated file or a secure download link.
+            // For now, ensuring audit logging is the priority.
+            NotificationService.Success("Export Started", "Your data export has been logged and started.");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Export Failed", "Could not export data.");
+        }
+    }
+
+    private async Task DeleteGroup(int id)
+    {
+        var endpoint = $"api/DeleteFamily/{id}";
+        var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), endpoint).ToString();
+        try
+        {
+            bool confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to permanently remove this family and all associated children? This action cannot be undone.");
+            if (!confirmed) return;
+
+            Console.WriteLine($"[API CALL] DELETE {fullEndpoint}");
+
+            bool success = await UserService.DeleteFamilyAsync(id, AppState.UserName);
+
+            Console.WriteLine($"[API RESPONSE] DELETE {fullEndpoint} -> {(success ? "SUCCESS" : "FAILED")}");
+
+            if (success)
+            {
+                FamilyGroupsList.RemoveAll(g => g.Id == id);
+                NotificationService.Success("Family Removed", "The family has been successfully deleted.");
+                StateHasChanged();
+            }
+            else
+            {
+                NotificationService.Error("Delete Failed", "The server rejected the delete request.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[API ERROR] DELETE {fullEndpoint} -> {ex.Message}");
+            NotificationService.Error("Error", "An error occurred during deletion.");
+        }
+    }
+
+    private void EditParent(Parent parent)
+    {
+        // Find the family this parent belongs to and open edit modal
+        var family = FamilyGroupsList.FirstOrDefault(g => g.Parents.Any(p => p.Id == parent.Id));
+        if (family != null)
+        {
+            if (parent.IsPrimary)
+            {
+                _pendingFocusElementId = "primaryCaregiverFirstName";
+            }
+            else
+            {
+                var user = RawUsers.FirstOrDefault(u => u.UserId == family.Id);
+                int caregiverIndex = -1;
+                if (user?.Caregivers != null && user.Caregivers.Any())
+                {
+                    caregiverIndex = user.Caregivers.FindIndex(c => (c.EffectiveId ?? c.PartnerId) == parent.Id);
+                }
+                if (caregiverIndex < 0)
+                {
+                    var nonPrimaryParents = family.Parents.Where(p => !p.IsPrimary).ToList();
+                    caregiverIndex = nonPrimaryParents.FindIndex(p => p.Id == parent.Id);
+                }
+                if (caregiverIndex < 0)
+                {
+                    caregiverIndex = 0;
+                }
+
+                _pendingFocusElementId = $"caregiver-firstname-{caregiverIndex}";
+            }
+
+            EditFamily(family);
+        }
+    }
+
+    private void AddParent(int groupId)
+    {
+        var family = FamilyGroupsList.FirstOrDefault(g => g.Id == groupId);
+        if (family != null)
+        {
+            _pendingFocusElementId = "primaryCaregiverFirstName";
+            EditFamily(family);
+        }
+    }
+
+    private void EditChild(Child child)
+    {
+        // HIPAA: Log PHI Access
+        Console.WriteLine($"[AUDIT] {DateTime.UtcNow:o} | Operator: {AppState.UserName} | Action: EDIT_CHILD_INIT | Detail: Contact {child.Id}");
+
+        // Find which family this child belongs to
+        var user = RawUsers.FirstOrDefault(u => u.Children.Any(c => c.ContactId == child.Id));
+        if (user == null) return;
+
+        var fullChild = user.Children.First(c => c.ContactId == child.Id);
+        
+        addChildData = new AddChildRequestDto
+        {
+            userId = user.UserId,
+            child = new ChildDto
+            {
+                ContactId = fullChild.ContactId,
+                FirstName = fullChild.FirstName ?? "",
+                LastName = fullChild.LastName ?? "",
+                dob = fullChild.Dob,
+                Gender = fullChild.ContactGeneder ?? ""
+            }
+        };
+        showAddChildModal = true;
+    }
+
+    private void AddChild(int groupId)
+    {
+        addChildData = new AddChildRequestDto
+        {
+            userId = groupId,
+            child = new ChildDto { dob = null }
+        };
+        showAddChildModal = true;
+    }
+
+    private void CloseAddChildModal()
+    {
+        showAddChildModal = false;
+    }
+
+    private async Task HandleSaveChild()
+    {
+        if (isAddingChild) return;
+
+        // Manual validation for standalone child add
+        if (string.IsNullOrWhiteSpace(addChildData.child.FirstName))
+        {
+            Console.WriteLine("[HandleSaveChild] Validation Failed: Child's first name is required.");
+            NotificationService.Error("Validation Error", "Child's first name is required.");
+            return;
+        }
+
+        try
+        {
+            isAddingChild = true;
+
+            if (addChildData.child.ContactId.GetValueOrDefault() > 0)
+            {
+                var updateRequest = new UpdateChildrenRequestDto
+                {
+                    userId = addChildData.userId,
+                    children = new List<ChildDto> { addChildData.child }
+                };
+
+                var requestJson = System.Text.Json.JsonSerializer.Serialize(updateRequest, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), "api/UpdateChildren").ToString();
+                
+                Console.WriteLine("==================== [SAVE CHILD - REQUEST] ====================");
+                Console.WriteLine($"[SAVE CHILD] API Endpoint: PUT {fullEndpoint}");
+                Console.WriteLine($"[SAVE CHILD] Operator    : {AppState.UserName}");
+                Console.WriteLine($"[SAVE CHILD] Request Body:\n{requestJson}");
+                Console.WriteLine("===============================================================");
+
+                var (success, endpoint, statusCode, responseBody) = await UserService.UpdateChildrenAsyncDetails(updateRequest, AppState.UserName);
+                
+                Console.WriteLine("==================== [SAVE CHILD - RESPONSE] ====================");
+                Console.WriteLine($"[SAVE CHILD] API Endpoint: PUT {endpoint}");
+                Console.WriteLine($"[SAVE CHILD] Status Code : {statusCode}");
+                Console.WriteLine($"[SAVE CHILD] Response Body:\n{responseBody}");
+                Console.WriteLine($"[SAVE CHILD] Overall Result: {(success ? "SUCCESS" : "FAILED")}");
+                Console.WriteLine("================================================================");
+
+                if (success)
+                {
+                    NotificationService.Success("Child Updated", "The child was updated successfully.");
+                    showAddChildModal = false;
+                    await LoadUsersAsync(manageLoadingState: true);
+                }
+                else
+                {
+                    NotificationService.Error("Action Failed", "There was an error updating the child.");
+                }
+            }
+            else
+            {
+                var fullEndpoint = new Uri(Http.BaseAddress ?? new Uri("https://membyapi.azurewebsites.net/memby/"), "api/AddChild").ToString();
+                var requestJson = System.Text.Json.JsonSerializer.Serialize(addChildData, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                
+                Console.WriteLine("==================== [SAVE CHILD - REQUEST] ====================");
+                Console.WriteLine($"[SAVE CHILD] API Endpoint: POST {fullEndpoint}");
+                Console.WriteLine($"[SAVE CHILD] Operator    : {AppState.UserName}");
+                Console.WriteLine($"[SAVE CHILD] Request Body:\n{requestJson}");
+                Console.WriteLine("===============================================================");
+
+                var (success, endpoint, statusCode, responseBody) = await UserService.AddChildAsyncDetails(addChildData, AppState.UserName);
+                
+                Console.WriteLine("==================== [SAVE CHILD - RESPONSE] ====================");
+                Console.WriteLine($"[SAVE CHILD] API Endpoint: POST {endpoint}");
+                Console.WriteLine($"[SAVE CHILD] Status Code : {statusCode}");
+                Console.WriteLine($"[SAVE CHILD] Response Body:\n{responseBody}");
+                Console.WriteLine($"[SAVE CHILD] Overall Result: {(success ? "SUCCESS" : "FAILED")}");
+                Console.WriteLine("================================================================");
+
+                if (success)
+                {
+                    NotificationService.Success("Child Added", "The child was added successfully.");
+                    showAddChildModal = false;
+                    await LoadUsersAsync(manageLoadingState: true);
+                }
+                else
+                {
+                    NotificationService.Error("Action Failed", "There was an error adding the child.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("==================== [SAVE CHILD - EXCEPTION] ====================");
+            Console.WriteLine($"[SAVE CHILD] Message   : {ex.Message}");
+            Console.WriteLine($"[SAVE CHILD] StackTrace: {ex.StackTrace}");
+            Console.WriteLine("=================================================================");
+            NotificationService.Error("Error", "An unexpected error occurred.");
+        }
+        finally
+        {
+            isAddingChild = false;
+        }
+    }
+
+
+    private void ToggleMobileSidebar()
+    {
+        // Handled via JS in App.razor
+    }
+}

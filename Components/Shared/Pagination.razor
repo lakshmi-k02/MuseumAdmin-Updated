@@ -1,0 +1,87 @@
+@using Microsoft.AspNetCore.Components
+
+@if (TotalPagesLocal > 1)
+{
+<div class="pagination-footer">
+    <div class="pagination-controls">
+        <button class="pagination-btn arrow" disabled="@(CurrentPage <= 1)" @onclick="Prev" title="Previous Page">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+
+        <div class="pagination-numbers">
+            @{
+                const int maxVisible = 10;
+                int startPage = Math.Max(1, CurrentPage - (maxVisible / 2));
+                int endPage = Math.Min(TotalPagesLocal, startPage + maxVisible - 1);
+                if (endPage - startPage + 1 < maxVisible)
+                {
+                    startPage = Math.Max(1, endPage - maxVisible + 1);
+                }
+
+                for (int p = startPage; p <= endPage; p++)
+                {
+                    var pageNum = p;
+                    <button class="pagination-btn number @(pageNum == CurrentPage ? "active" : "")" @onclick="(() => ChangePage(pageNum))">@pageNum</button>
+                }
+            }
+        </div>
+
+        <button class="pagination-btn arrow" disabled="@(CurrentPage >= TotalPagesLocal)" @onclick="Next" title="Next Page">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+    </div>
+
+    <div class="pagination-size">
+        @if (ShowInfo)
+        {
+            var from = TotalCount == 0 ? 0 : ((CurrentPage - 1) * PageSize) + 1;
+            var to = Math.Min(TotalCount, CurrentPage * PageSize);
+            <div class="pagination-info">Showing @from to @to of @TotalCount results</div>
+        }
+
+        <span>Show</span>
+        <select @onchange="OnSizeChanged" value="@PageSize" class="pagination-select">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+        </select>
+        <span>per page</span>
+    </div>
+</div>
+
+}
+
+@code {
+    [Parameter] public int TotalCount { get; set; }
+    [Parameter] public int PageSize { get; set; } = 20;
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+    [Parameter] public EventCallback<int> OnPageSizeChanged { get; set; }
+    [Parameter] public bool ShowInfo { get; set; } = true;
+
+    private int TotalPagesLocal => Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+
+    private Task Prev()
+    {
+        if (CurrentPage > 1) return OnPageChanged.InvokeAsync(CurrentPage - 1);
+        return Task.CompletedTask;
+    }
+
+    private Task Next()
+    {
+        var totalPagesLocal = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+        if (CurrentPage < totalPagesLocal) return OnPageChanged.InvokeAsync(CurrentPage + 1);
+        return Task.CompletedTask;
+    }
+
+    private Task ChangePage(int p) => OnPageChanged.InvokeAsync(p);
+
+    private Task OnSizeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e?.Value?.ToString(), out var s) && s > 0)
+        {
+            return OnPageSizeChanged.InvokeAsync(s);
+        }
+        return Task.CompletedTask;
+    }
+}

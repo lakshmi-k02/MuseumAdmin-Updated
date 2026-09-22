@@ -1,0 +1,1195 @@
+@using MuseumAdmin.Models
+@inject IJSRuntime JS
+
+@{
+    var containerClass = isSidebarCollapsed ? "sidebar-collapsed" : string.Empty;
+    var sidebarTitleText = isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar";
+}
+
+<div class="builder-container @containerClass fade-in">
+    <!-- Sidebar -->
+    <div class="builder-sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            </div>
+            <div class="sidebar-title-group">
+                <h3 class="sidebar-title">Check-In Form</h3>
+                <p class="sidebar-subtitle">Form Builder</p>
+            </div>
+            <button type="button" class="btn-sidebar-toggle" @onclick="ToggleSidebar" title="@sidebarTitleText">
+                @if (isSidebarCollapsed)
+                {
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+                }
+                else
+                {
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
+                }
+            </button>
+        </div>
+
+        <div class="sidebar-content-scroll">
+            <div class="form-group">
+                <label class="builder-label">Form Title <span class="required-asterisk">*</span></label>
+                @{ var titleErrorClass = showValidation && string.IsNullOrWhiteSpace(Form.Title) ? "input-error" : string.Empty; }
+                <input type="text" 
+                       @bind="Form.Title" 
+                       @bind:event="oninput"
+                       class="builder-input @titleErrorClass" 
+                       placeholder="e.g. Weekly Progress Check-In" />
+                @if (showValidation && string.IsNullOrWhiteSpace(Form.Title))
+                {
+                    <div class="builder-validation-message">Form title is required.</div>
+                }
+            </div>
+
+            <div class="sidebar-section">
+                <label class="sidebar-label">DESCRIPTION</label>
+                <textarea class="builder-input" rows="4" placeholder="Brief instructions for patients..." @bind="Form.Description"></textarea>
+            </div>
+
+            <div class="sidebar-section">
+                <label class="sidebar-label">ADD QUESTION</label>
+                <div class="question-type-grid">
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Short Text")' title="Short text">
+                        <span class="qtype-icon">✏️</span> <span class="qtype-text">Short text</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Long Text")' title="Long text">
+                        <span class="qtype-icon">📝</span> <span class="qtype-text">Long text</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Yes / No")' title="Yes / No">
+                        <span class="qtype-icon">✅</span> <span class="qtype-text">Yes / No</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Likert Scale")' title="Likert scale">
+                        <span class="qtype-icon">😐</span> <span class="qtype-text">Likert scale</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Slider (0-10)")' title="Slider (0-10)">
+                        <span class="qtype-icon">🎚️</span> <span class="qtype-text">Slider (0-10)</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Multiple Choice")' title="Multiple choice">
+                        <span class="qtype-icon">🔘</span> <span class="qtype-text">Multiple choice</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Star Rating")' title="Star rating">
+                        <span class="qtype-icon">⭐</span> <span class="qtype-text">Star rating</span>
+                    </button>
+                    <button type="button" class="btn-qtype" @onclick='() => AddQuestion("Date")' title="Date">
+                        <span class="qtype-icon">📅</span> <span class="qtype-text">Date</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            <button type="button" class="btn-builder-outline" title="Preview as patient" @onclick="TogglePatientPreview">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <span class="btn-text">Preview ↗</span>
+            </button>
+            <button type="button" class="btn-builder-primary" title="Save form" @onclick="HandleSave">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2 2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                <span class="btn-text">Save Form</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Canvas -->
+    <div class="builder-canvas">
+        <div class="canvas-header">
+            <div class="canvas-header-left">
+                @if (isSidebarCollapsed)
+                {
+                    <button type="button" class="btn-canvas-expand" @onclick="ToggleSidebar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                }
+                <h2 class="canvas-title">@(string.IsNullOrWhiteSpace(Form.Title) ? "Untitled Form" : Form.Title)</h2>
+                <span class="q-count-badge">@Form.Questions.Count Questions</span>
+            </div>
+            <div class="canvas-header-right">
+                @if (ShowAdminToggle)
+                {
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 13px; font-weight: 600; color: #64748b;">System Default Template</span>
+                        <button type="button" class='btn-toggle @(Form.IsAdminDefault ? "active" : "")' @onclick="ToggleAdminDefault">
+                            <span class="toggle-knob"></span>
+                        </button>
+                    </div>
+                }
+                else if (!Form.IsAdminDefault)
+                {
+                    <span class="badge-modified">Modified</span>
+                }
+                else
+                {
+                    <span class="badge-default">System Default</span>
+                }
+            </div>
+        </div>
+
+        <div class="canvas-body">
+            @if (showValidation && !string.IsNullOrWhiteSpace(validationMessage))
+            {
+                <div class="builder-validation-summary">@validationMessage</div>
+            }
+
+            @if (Form.Questions.Count == 0)
+            {
+                <div class="empty-canvas-state">
+                    <div class="empty-canvas-icon">📝</div>
+                    <h3>Begin creating your form</h3>
+                    <p>Choose a question type from the sidebar to get started with your custom check-in form.</p>
+                </div>
+            }
+            else
+            {
+                <div class="questions-list">
+                    @foreach (var (q, index) in Form.Questions.Select((item, i) => (item, i)))
+                    {
+                        <div class="q-card fade-in">
+                            <div class="q-card-header">
+                                <div class="q-number">@(index + 1)</div>
+                                <div class="q-title-wrap">
+                                    <input type="text" class="q-title-input @(_unsavedNewQuestions.Contains(q.Id) ? "highlight-new" : "")" placeholder="What would you like to ask?" @bind="q.Text" autofocus="@(q.Id == _lastAddedQuestionId)" />
+                                    <span class="q-type-label">@q.Type</span>
+                                </div>
+                                
+                                <div class="q-actions">
+                                    <button type="button" class="btn-q-reorder" @onclick="() => MoveQuestionUp(q.Id)" disabled="@(index == 0)" title="Move up">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                                    </button>
+                                    <button type="button" class="btn-q-reorder" @onclick="() => MoveQuestionDown(q.Id)" disabled="@(index == Form.Questions.Count - 1)" title="Move down">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                    </button>
+                                    <button type="button" class="btn-q-delete" @onclick="() => RemoveQuestion(q.Id)" title="Remove question">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="q-card-body">
+                                <div class="preview-tag">Preview</div>
+                                
+                                <div class="q-preview-container">
+                                    @if (q.Type == "Likert Scale")
+                                    {
+                                        <div class="likert-preview">
+                                            @for (int i = 1; i <= 5; i++)
+                                            {
+                                                var isMiddle = i == 3;
+                                                var middleLabel = GetLikertLabel(q, i);
+                                                var circleContent = q.LikertScalePreset == "satisfaction_5"
+                                                    ? i switch { 1 => "😭", 2 => "🙁", 3 => "😐", 4 => "🙂", 5 => "😁", _ => "" }
+                                                    : i.ToString();
+                                                <div class="likert-preview-scale">
+                                                    @{ var middleActive = isMiddle ? "active" : string.Empty; }
+                                                    <div class="likert-preview-circle @middleActive">@circleContent</div>
+                                                    <span class="likert-preview-label text-center">@middleLabel</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else if (q.Type == "Slider (0-10)")
+                                    {
+                                        <div class="slider-preview">
+                                            <span class="slider-limit">0</span>
+                                            <div class="slider-track-visual">
+                                                <div class="slider-fill-visual" style="width: 50%;"></div>
+                                                <div class="slider-thumb-visual" style="left: 50%;"></div>
+                                            </div>
+                                            <span class="slider-limit">10</span>
+                                        </div>
+                                    }
+                                    else if (q.Type == "Yes / No")
+                                    {
+                                        <div class="yesno-preview">
+                                            <button type="button" class="btn-preview-toggle active">Yes</button>
+                                            <button type="button" class="btn-preview-toggle">No</button>
+                                            <button type="button" class="btn-preview-toggle">Unsure</button>
+                                        </div>
+                                    }
+                                    else if (q.Type == "Short Text")
+                                    {
+                                        <input type="text" class="preview-form-control" disabled placeholder="Short answer text here..." />
+                                    }
+                                    else if (q.Type == "Long Text")
+                                    {
+                                        <textarea class="preview-form-control" disabled rows="3" placeholder="Long answer text paragraphs..."></textarea>
+                                    }
+                                    else if (q.Type == "Multiple Choice")
+                                    {
+                                        <div class="multiple-choice-preview">
+                                            @foreach (var option in GetEffectiveOptions(q))
+                                            {
+                                                <label class="multiple-choice-preview-item">
+                                                    <input type="checkbox" disabled />
+                                                    <span>@option</span>
+                                                </label>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="preview-generic">Interactive field for @q.Type</div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="q-card-footer">
+                                @if (q.Type == "Likert Scale")
+                                {
+                                    <div class="likert-config-panel">
+                                        <div class="likert-config-header">Likert Scale Configuration</div>
+                                        <div class="likert-config-grid">
+                                            <label class="likert-config-item">
+                                                <span>Scale Preset</span>
+                                                <select class="builder-input" value="@q.LikertScalePreset" @onchange="(e) => UpdateLikertLabels(q, e)">
+                                                    <option value="agreement_5">Agreement</option>
+                                                    <option value="satisfaction_5">Satisfaction</option>
+                                                    <option value="frequency_5">Frequency</option>
+                                                    <option value="difficulty_5">Difficulty</option>
+                                                    <option value="custom">Custom</option>
+                                                </select>
+                                            </label>
+                                            <label class="likert-config-item">
+                                                <span>Label 1 (Left-most)</span>
+                                                <input type="text" class="builder-input" value="@q.LikertLeftLabel" @oninput="(e) => OnLabelInput(q, 1, e)" placeholder="e.g. Strongly disagree" />
+                                            </label>
+                                            <label class="likert-config-item">
+                                                <span>Label 2</span>
+                                                <input type="text" class="builder-input" value="@q.LikertLabel2" @oninput="(e) => OnLabelInput(q, 2, e)" placeholder="e.g. Disagree" />
+                                            </label>
+                                            <label class="likert-config-item">
+                                                <span>Label 3 (Middle)</span>
+                                                <input type="text" class="builder-input" value="@q.LikertLabel3" @oninput="(e) => OnLabelInput(q, 3, e)" placeholder="e.g. Neutral" />
+                                            </label>
+                                            <label class="likert-config-item">
+                                                <span>Label 4</span>
+                                                <input type="text" class="builder-input" value="@q.LikertLabel4" @oninput="(e) => OnLabelInput(q, 4, e)" placeholder="e.g. Agree" />
+                                            </label>
+                                            <label class="likert-config-item">
+                                                <span>Label 5 (Right-most)</span>
+                                                <input type="text" class="builder-input" value="@q.LikertRightLabel" @oninput="(e) => OnLabelInput(q, 5, e)" placeholder="e.g. Strongly agree" />
+                                            </label>
+                                        </div>
+                                        <div class="likert-config-preview">
+                                            <span class="likert-preview-extreme">@q.LikertLeftLabel</span>
+                                            <div class="likert-preview-emoji-row">
+                                                @for (int pi = 1; pi <= 5; pi++)
+                                                {
+                                                    var content = q.LikertScalePreset == "satisfaction_5"
+                                                        ? pi switch { 1 => "😭", 2 => "🙁", 3 => "😐", 4 => "🙂", 5 => "😁", _ => "" }
+                                                        : pi.ToString();
+                                                    <span class="likert-preview-emoji">@content</span>
+                                                }
+                                            </div>
+                                            <span class="likert-preview-extreme">@q.LikertRightLabel</span>
+                                        </div>
+                                    </div>
+                                }
+                                else if (q.Type == "Multiple Choice")
+                                {
+                                    <div class="choice-config-panel">
+                                        <div class="choice-config-header">
+                                            <span>Multiple Choice Options</span>
+                                            <button type="button" class="btn-add-option" @onclick="() => AddChoiceOption(q)">
+                                                + Add Option
+                                            </button>
+                                        </div>
+                                        <div class="choice-options-list">
+                                            @foreach (var (option, optionIndex) in q.Options.Select((value, idx) => (value, idx)))
+                                            {
+                                                <div class="choice-option-row">
+                                                    <input type="text"
+                                                           class="builder-input choice-option-input"
+                                                           @bind="q.Options[optionIndex]"
+                                                           placeholder="Please insert answer" />
+                                                    <button type="button"
+                                                            class="btn-remove-option"
+                                                            @onclick="() => RemoveChoiceOption(q, optionIndex)"
+                                                            title="Remove option">
+                                                        ×
+                                                    </button>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
+                                <div class="q-settings-group">
+                                    <label class="q-setting-item">
+                                        <input type="checkbox" @bind="q.IsRequired" class="q-setting-checkbox" />
+                                        <span>Required question</span>
+                                    </label>
+                                    <label class="q-setting-item">
+                                        <input type="checkbox" @bind="q.IncludeHintText" class="q-setting-checkbox" />
+                                        <span>Add hint / helper text</span>
+                                    </label>
+                                </div>
+                                
+                                @if(q.IncludeHintText)
+                                {
+                                    <div class="q-hint-input-container">
+                                        <input type="text" class="q-hint-field" placeholder="e.g. Please consider your last 7 days..." @bind="q.HintText" />
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (showPatientPreview)
+{
+    <div class="preview-modal-overlay" @onclick="TogglePatientPreview">
+        <div class="preview-modal-container" @onclick:stopPropagation>
+            <div class="preview-modal-header">
+                <div class="modal-header-left">
+                    <span class="modal-preview-icon">👁️</span>
+                    <div>
+                        <h3 class="modal-title">Form Preview</h3>
+                        <p class="modal-subtitle">Patient View Simulation</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-modal-close" @onclick="TogglePatientPreview">&times;</button>
+            </div>
+
+            <div class="patient-preview-panel">
+                <div class="patient-preview-chrome">
+                    <div class="preview-device-bar">
+                        <span class="preview-device-dot"></span>
+                        <span class="preview-device-dot"></span>
+                        <span class="preview-device-dot"></span>
+                        <span class="preview-device-label">Patient View</span>
+                    </div>
+                </div>
+                <div class="patient-form-preview">
+                    <div class="patient-form-header">
+                        <h3>@(string.IsNullOrWhiteSpace(Form.Title) ? "Check-In Form" : Form.Title)</h3>
+                        <p>@(string.IsNullOrWhiteSpace(Form.Description) ? "Please take a moment to answer the following questions before your session." : Form.Description)</p>
+                    </div>
+
+                    @foreach (var (q, i) in Form.Questions.Select((item, idx) => (item, idx)))
+                    {
+                        <div class="patient-q-card">
+                            <label class="patient-q-label">
+                                <span class="patient-q-number">@(i + 1).</span> @q.Text
+                                @if (q.IsRequired)
+                                {
+                                    <span class="patient-required">*</span>
+                                }
+                            </label>
+
+                            @if (q.IncludeHintText && !string.IsNullOrWhiteSpace(q.HintText))
+                            {
+                                <p class="patient-q-hint">@q.HintText</p>
+                            }
+
+                            @if (q.Type == "Likert Scale")
+                            {
+                                <div class="patient-likert">
+                                    @for (int li = 1; li <= 5; li++)
+                                    {
+                                        var previewLabel = GetLikertLabel(q, li);
+                                        var circleContent = q.LikertScalePreset == "satisfaction_5"
+                                            ? li switch { 1 => "😭", 2 => "🙁", 3 => "😐", 4 => "🙂", 5 => "😁", _ => "" }
+                                            : li.ToString();
+                                        <div class="patient-likert-item">
+                                            <div class="patient-likert-circle">@circleContent</div>
+                                            <span class="patient-likert-label">@previewLabel</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (q.Type == "Slider (0-10)")
+                            {
+                                <div class="patient-slider">
+                                    <span class="patient-slider-limit">@q.SliderMin</span>
+                                    <div class="patient-slider-track">
+                                        <div class="patient-slider-fill"></div>
+                                        <div class="patient-slider-thumb"></div>
+                                    </div>
+                                    <span class="patient-slider-limit">@q.SliderMax</span>
+                                </div>
+                            }
+                            else if (q.Type == "Yes / No")
+                            {
+                                <div class="patient-yesno">
+                                    <button type="button" class="patient-yesno-btn">Yes</button>
+                                    <button type="button" class="patient-yesno-btn">No</button>
+                                    <button type="button" class="patient-yesno-btn">Unsure</button>
+                                </div>
+                            }
+                            else if (q.Type == "Long Text")
+                            {
+                                <textarea class="patient-textarea" disabled placeholder="Type your answer here..." rows="3"></textarea>
+                            }
+                            else if (q.Type == "Short Text")
+                            {
+                                <input type="text" class="patient-textinput" disabled placeholder="Type your answer here..." />
+                            }
+                            else if (q.Type == "Multiple Choice")
+                            {
+                                <div class="patient-choice-list">
+                                    @foreach (var option in GetEffectiveOptions(q))
+                                    {
+                                        <label class="patient-choice-item"><input type="radio" disabled name="mc-@q.Id" /> @option</label>
+                                    }
+                                </div>
+                            }
+                            else if (q.Type == "Star Rating")
+                            {
+                                <div class="patient-stars">★★★★★</div>
+                            }
+                            else if (q.Type == "Date")
+                            {
+                                <input type="text" class="patient-textinput" disabled placeholder="Select a date" />
+                            }
+                            else
+                            {
+                                <div class="patient-generic-field">Interactive field for @q.Type</div>
+                            }
+                        </div>
+                    }
+
+                    <div class="patient-form-submit">
+                        <button type="button" class="patient-submit-btn" disabled>Submit Check-In</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public CheckInForm Form { get; set; } = new();
+    [Parameter] public bool ShowAdminToggle { get; set; } = false;
+    [Parameter] public EventCallback<CheckInForm> OnSave { get; set; }
+
+    private CheckInForm? _previousForm;
+
+    protected override void OnParametersSet()
+    {
+        if (Form != _previousForm)
+        {
+            _previousForm = Form;
+            showValidation = false;
+            validationMessage = string.Empty;
+            showPatientPreview = false;
+        }
+    }
+
+    private bool isSidebarCollapsed = false;
+    private bool showPatientPreview = false;
+    private bool showValidation = false;
+    private string validationMessage = string.Empty;
+
+    private string GetLikertLabel(CheckInQuestion q, int index)
+    {
+        return index switch
+        {
+            1 => string.IsNullOrWhiteSpace(q.LikertLeftLabel) ? "Strongly disagree" : q.LikertLeftLabel,
+            2 => string.IsNullOrWhiteSpace(q.LikertLabel2) ? "Disagree" : q.LikertLabel2,
+            3 => string.IsNullOrWhiteSpace(q.LikertLabel3) ? "Neutral" : q.LikertLabel3,
+            4 => string.IsNullOrWhiteSpace(q.LikertLabel4) ? "Agree" : q.LikertLabel4,
+            5 => string.IsNullOrWhiteSpace(q.LikertRightLabel) ? "Strongly agree" : q.LikertRightLabel,
+            _ => string.Empty
+        };
+    }
+
+    private void UpdateLikertLabels(CheckInQuestion question, ChangeEventArgs e)
+    {
+        string preset = e.Value?.ToString() ?? "agreement_5";
+        question.LikertScalePreset = preset;
+        switch (preset)
+        {
+            case "agreement_5":
+                question.LikertLeftLabel = "Strongly disagree";
+                question.LikertLabel2 = "Disagree";
+                question.LikertLabel3 = "Neutral";
+                question.LikertLabel4 = "Agree";
+                question.LikertRightLabel = "Strongly agree";
+                break;
+            case "satisfaction_5":
+                question.LikertLeftLabel = "Very dissatisfied";
+                question.LikertLabel2 = "Dissatisfied";
+                question.LikertLabel3 = "Neutral";
+                question.LikertLabel4 = "Satisfied";
+                question.LikertRightLabel = "Very satisfied";
+                break;
+            case "frequency_5":
+                question.LikertLeftLabel = "Never";
+                question.LikertLabel2 = "Rarely";
+                question.LikertLabel3 = "Sometimes";
+                question.LikertLabel4 = "Often";
+                question.LikertRightLabel = "Always";
+                break;
+            case "difficulty_5":
+                question.LikertLeftLabel = "Very easy";
+                question.LikertLabel2 = "Easy";
+                question.LikertLabel3 = "Moderate";
+                question.LikertLabel4 = "Difficult";
+                question.LikertRightLabel = "Very difficult";
+                break;
+        }
+    }
+
+    private void OnLabelInput(CheckInQuestion question, int labelIndex, ChangeEventArgs e)
+    {
+        string val = e.Value?.ToString() ?? string.Empty;
+        switch (labelIndex)
+        {
+            case 1: question.LikertLeftLabel = val; break;
+            case 2: question.LikertLabel2 = val; break;
+            case 3: question.LikertLabel3 = val; break;
+            case 4: question.LikertLabel4 = val; break;
+            case 5: question.LikertRightLabel = val; break;
+        }
+        question.LikertScalePreset = "custom";
+    }
+
+    private void ToggleSidebar() => isSidebarCollapsed = !isSidebarCollapsed;
+
+    private async Task TogglePatientPreview()
+    {
+        if (showPatientPreview)
+        {
+            showPatientPreview = false;
+            return;
+        }
+
+        if (!await ValidateBeforePreviewOrSave())
+        {
+            return;
+        }
+
+        showPatientPreview = true;
+    }
+
+    private Guid? _lastAddedQuestionId;
+    private HashSet<Guid> _unsavedNewQuestions = new();
+
+    private void AddQuestion(string type)
+    {
+        var question = new CheckInQuestion { Type = type };
+
+        if (type == "Multiple Choice")
+        {
+            question.Options.AddRange(new[] { string.Empty, string.Empty });
+        }
+
+        Form.Questions.Add(question);
+        _lastAddedQuestionId = question.Id;
+        _unsavedNewQuestions.Add(question.Id);
+        RefreshValidationState();
+    }
+
+    private void RemoveQuestion(Guid id)
+    {
+        var q = Form.Questions.FirstOrDefault(x => x.Id == id);
+        if (q != null) Form.Questions.Remove(q);
+        RefreshValidationState();
+    }
+
+    private void MoveQuestionUp(Guid id)
+    {
+        var index = Form.Questions.FindIndex(x => x.Id == id);
+        if (index > 0)
+        {
+            var item = Form.Questions[index];
+            Form.Questions.RemoveAt(index);
+            Form.Questions.Insert(index - 1, item);
+        }
+    }
+
+    private void MoveQuestionDown(Guid id)
+    {
+        var index = Form.Questions.FindIndex(x => x.Id == id);
+        if (index >= 0 && index < Form.Questions.Count - 1)
+        {
+            var item = Form.Questions[index];
+            Form.Questions.RemoveAt(index);
+            Form.Questions.Insert(index + 1, item);
+        }
+    }
+
+    private void ToggleAdminDefault()
+    {
+        Form.IsAdminDefault = !Form.IsAdminDefault;
+    }
+
+    private void AddChoiceOption(CheckInQuestion question)
+    {
+        question.Options.Add(string.Empty);
+    }
+
+    private void RemoveChoiceOption(CheckInQuestion question, int index)
+    {
+        if (index >= 0 && index < question.Options.Count)
+        {
+            question.Options.RemoveAt(index);
+        }
+    }
+
+    private IEnumerable<string> GetEffectiveOptions(CheckInQuestion question)
+    {
+        var options = question.Options
+            .Where(option => !string.IsNullOrWhiteSpace(option))
+            .ToList();
+
+        return options.Count > 0 ? options : new[] { "Option 1", "Option 2" };
+    }
+
+    private async Task HandleSave()
+    {
+        if (!await ValidateBeforePreviewOrSave())
+        {
+            return;
+        }
+
+        _unsavedNewQuestions.Clear();
+
+        if (OnSave.HasDelegate)
+        {
+            Console.WriteLine($"[DEBUG] CheckInBuilder HandleSave - Form Payload: {System.Text.Json.JsonSerializer.Serialize(Form, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })}");
+            await OnSave.InvokeAsync(Form);
+        }
+    }
+
+    private async Task<bool> ValidateBeforePreviewOrSave()
+    {
+        var missingTitle = string.IsNullOrWhiteSpace(Form.Title);
+        var missingQuestions = Form.Questions.Count == 0;
+        var questionWithoutText = Form.Questions.FirstOrDefault(q => string.IsNullOrWhiteSpace(q.Text));
+        var invalidMultipleChoice = Form.Questions.FirstOrDefault(q =>
+            q.Type == "Multiple Choice" &&
+            q.Options.Count(option => !string.IsNullOrWhiteSpace(option)) < 2);
+
+        if (!missingTitle && !missingQuestions && questionWithoutText == null && invalidMultipleChoice == null)
+        {
+            showValidation = false;
+            validationMessage = string.Empty;
+            return true;
+        }
+
+        showValidation = true;
+        validationMessage = missingTitle && missingQuestions
+            ? "Please enter a form title and add at least one question."
+            : missingTitle
+                ? "Please enter a form title."
+                : missingQuestions
+                    ? "Please add at least one question."
+                    : questionWithoutText != null
+                        ? "Please enter text for every question before saving."
+                        : "Multiple choice questions need at least two filled options.";
+
+        await JS.InvokeVoidAsync("showToast", validationMessage, "error");
+        return false;
+    }
+
+    private void OnTitleChanged(ChangeEventArgs e)
+    {
+        Form.Title = e.Value?.ToString() ?? string.Empty;
+        RefreshValidationState();
+    }
+
+    private void RefreshValidationState()
+    {
+        if (!showValidation)
+        {
+            return;
+        }
+
+        var missingTitle = string.IsNullOrWhiteSpace(Form.Title);
+        var missingQuestions = Form.Questions.Count == 0;
+        var questionWithoutText = Form.Questions.FirstOrDefault(q => string.IsNullOrWhiteSpace(q.Text));
+        var invalidMultipleChoice = Form.Questions.FirstOrDefault(q =>
+            q.Type == "Multiple Choice" &&
+            q.Options.Count(option => !string.IsNullOrWhiteSpace(option)) < 2);
+
+        if (!missingTitle && !missingQuestions && questionWithoutText == null && invalidMultipleChoice == null)
+        {
+            showValidation = false;
+            validationMessage = string.Empty;
+            return;
+        }
+
+        validationMessage = missingTitle && missingQuestions
+            ? "Please enter a form title and add at least one question."
+            : missingTitle
+                ? "Please enter a form title."
+                : missingQuestions
+                    ? "Please add at least one question."
+                    : questionWithoutText != null
+                        ? "Please enter text for every question before saving."
+                        : "Multiple choice questions need at least two filled options.";
+    }
+}
+
+<style>
+    .preview-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 3000;
+    }
+
+    .preview-modal-container {
+        width: min(960px, 100%);
+        max-height: 90vh;
+        overflow: hidden;
+        background: #ffffff;
+        border-radius: 24px;
+        box-shadow: 0 28px 90px rgba(15, 23, 42, 0.28);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .preview-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 24px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .modal-header-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .modal-preview-icon {
+        width: 42px;
+        height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 14px;
+        background: #eff6ff;
+        font-size: 18px;
+    }
+
+    .modal-title {
+        margin: 0;
+        font-size: 20px;
+        color: #0f172a;
+    }
+
+    .modal-subtitle {
+        margin: 4px 0 0;
+        color: #64748b;
+        font-size: 13px;
+    }
+
+    .btn-modal-close {
+        border: none;
+        background: transparent;
+        font-size: 30px;
+        line-height: 1;
+        color: #64748b;
+        cursor: pointer;
+    }
+
+    .patient-preview-panel {
+        padding: 24px;
+        overflow: auto;
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    }
+
+    .patient-preview-chrome {
+        max-width: 520px;
+        margin: 0 auto;
+    }
+
+    .preview-device-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 18px 18px 0 0;
+        background: #0f172a;
+    }
+
+    .preview-device-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.4);
+    }
+
+    .preview-device-label {
+        margin-left: auto;
+        color: #cbd5e1;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .patient-form-preview {
+        max-width: 520px;
+        margin: 0 auto;
+        background: #ffffff;
+        border-radius: 0 0 24px 24px;
+        padding: 24px;
+        box-shadow: 0 20px 55px rgba(15, 23, 42, 0.12);
+    }
+
+    .patient-form-header h3 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 24px;
+        font-weight: 700;
+    }
+
+    .patient-form-header p {
+        margin: 10px 0 0;
+        color: #64748b;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    .patient-q-card {
+        margin-top: 18px;
+        padding: 18px;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        background: #f8fafc;
+    }
+
+    .patient-q-label {
+        display: block;
+        color: #0f172a;
+        font-weight: 600;
+        line-height: 1.5;
+    }
+
+    .patient-q-number,
+    .patient-required {
+        color: #2563eb;
+    }
+
+    .patient-q-hint {
+        margin: 8px 0 0;
+        color: #64748b;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    .likert-config-panel {
+        margin-bottom: 16px;
+        padding: 18px;
+        border: 1px solid #bfdbfe;
+        border-radius: 18px;
+        background: #eff6ff;
+    }
+
+    .likert-config-header {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1e3a8a;
+        margin-bottom: 14px;
+    }
+
+    .likert-config-grid {
+        display: grid;
+        gap: 12px;
+    }
+
+    .likert-config-item {
+        display: grid;
+        gap: 6px;
+    }
+
+    .likert-config-item span {
+        font-size: 13px;
+        font-weight: 700;
+        color: #334155;
+    }
+
+    .likert-config-preview {
+        margin-top: 16px;
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid #dbeafe;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+    }
+
+    .likert-preview-extreme {
+        color: #334155;
+        font-size: 14px;
+        font-weight: 600;
+        flex: 1;
+    }
+
+    .likert-preview-extreme:last-child {
+        text-align: right;
+    }
+
+    .likert-preview-emoji-row {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+    }
+
+    .likert-preview-emoji {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        border: 2px solid #bfdbfe;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #ffffff;
+        font-size: 22px;
+    }
+
+    .multiple-choice-preview,
+    .choice-options-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .multiple-choice-preview-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #334155;
+    }
+
+    .choice-config-panel {
+        margin-bottom: 16px;
+        padding: 18px;
+        border: 1px solid #bfdbfe;
+        border-radius: 18px;
+        background: #eff6ff;
+    }
+
+    .choice-config-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+        color: #1e3a8a;
+        font-size: 18px;
+        font-weight: 700;
+    }
+
+    .btn-add-option {
+        border: 1px solid #93c5fd;
+        background: #ffffff;
+        color: #2563eb;
+        border-radius: 12px;
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .choice-option-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .choice-option-input {
+        flex: 1;
+    }
+
+    .btn-remove-option {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        border: 1px solid #fecaca;
+        background: #ffffff;
+        color: #dc2626;
+        font-size: 24px;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .patient-likert {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+    }
+
+    .patient-likert-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .patient-likert-circle {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 1px solid #cbd5e1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        color: #334155;
+        background: #ffffff;
+    }
+
+    .patient-likert-label {
+        color: #475569;
+        font-size: 13px;
+    }
+
+    .patient-slider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 14px;
+    }
+
+    .patient-slider-limit {
+        color: #64748b;
+        font-size: 13px;
+        min-width: 20px;
+        text-align: center;
+    }
+
+    .patient-slider-track {
+        flex: 1;
+        height: 6px;
+        border-radius: 999px;
+        background: #dbeafe;
+        position: relative;
+    }
+
+    .patient-slider-fill {
+        width: 50%;
+        height: 100%;
+        border-radius: inherit;
+        background: #3b82f6;
+    }
+
+    .patient-slider-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #ffffff;
+        border: 3px solid #2563eb;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+    }
+
+    .patient-yesno {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+    }
+
+    .patient-yesno-btn,
+    .patient-choice-item {
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #334155;
+        font-size: 13px;
+    }
+
+    .patient-textarea,
+    .patient-textinput {
+        width: 100%;
+        margin-top: 14px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #64748b;
+        font-size: 14px;
+    }
+
+    .patient-choice-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+    }
+
+    .patient-choice-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 14px;
+    }
+
+    .patient-stars,
+    .patient-generic-field {
+        margin-top: 14px;
+        color: #475569;
+        font-size: 18px;
+        letter-spacing: 0.2em;
+    }
+
+    .patient-form-submit {
+        margin-top: 24px;
+    }
+
+    .patient-submit-btn {
+        width: 100%;
+        padding: 14px 18px;
+        border: none;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 700;
+        opacity: 0.7;
+    }
+
+    @@media (max-width: 768px) {
+        .preview-modal-overlay {
+            padding: 12px;
+        }
+
+        .preview-modal-header,
+        .patient-preview-panel,
+        .patient-form-preview {
+            padding: 16px;
+        }
+
+        .patient-form-preview {
+            border-radius: 0 0 20px 20px;
+        }
+
+        .likert-config-preview {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .likert-preview-extreme:last-child {
+            text-align: left;
+        }
+
+        .choice-config-header,
+        .choice-option-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+    }
+</style>

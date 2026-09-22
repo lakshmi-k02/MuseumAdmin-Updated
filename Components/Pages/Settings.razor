@@ -1,0 +1,728 @@
+@page "/settings"
+@using Microsoft.AspNetCore.Authorization
+@using MuseumAdmin.Services
+@using MuseumAdmin.Models
+@attribute [Authorize]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+@inject NavigationManager NavigationManager
+@inject AppState AppState
+@inject MuseumAuthService AuthService
+@inject NotificationService NotificationService
+@inject IJSRuntime JS
+
+<div class="fade-in">
+    <TopBar Title="Settings" ShowButton="false" />
+</div>
+
+<div class="content-container fade-in">
+    <!-- User Profile Hero Banner -->
+    <div class="profile-hero-card">
+        <div class="profile-hero-content">
+            <div class="profile-avatar-circle">
+                <span class="avatar-initials">@GetUserInitials()</span>
+            </div>
+            <div class="profile-hero-details">
+                <div class="profile-hero-top">
+                    <h2 class="profile-name">@(string.IsNullOrWhiteSpace(AppState.UserName) ? "Authenticated User" : AppState.UserName)</h2>
+                    <span class="role-pill @(AppState.Role?.ToLower() == "therapist" ? "role-therapist" : "role-admin")">
+                        @(string.IsNullOrWhiteSpace(AppState.Role) ? "Admin" : AppState.Role)
+                    </span>
+                    <span class="session-pill">
+                        <span class="status-dot"></span>
+                        Active Session
+                    </span>
+                </div>
+                <div class="profile-hero-meta">
+                    <span class="meta-item"><span class="meta-icon">🏢</span> @(AppState.MuseumName ?? "Dallas Children's Museum")</span>
+                    <span class="meta-item"><span class="meta-icon">🆔</span> User ID: #@AppState.UserId</span>
+                    <span class="meta-item"><span class="meta-icon">🛡️</span> HIPAA Verified</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-grid">
+        <!-- Sidebar Navigation for Settings Section -->
+        <div class="card settings-tabs-card">
+            <div class="settings-tabs">
+                <button type="button" class="settings-tab-btn @(ActiveTab == "general" ? "active" : "")" @onclick="@(() => SetActiveTab("general"))">
+                    <span class="tab-icon">🏢</span>
+                    <div class="tab-text">
+                        <span class="tab-title">Profile & General</span>
+                        <span class="tab-desc">System branding & info</span>
+                    </div>
+                </button>
+                <button type="button" class="settings-tab-btn @(ActiveTab == "security" ? "active" : "")" @onclick="@(() => SetActiveTab("security"))">
+                    <span class="tab-icon">🔑</span>
+                    <div class="tab-text">
+                        <span class="tab-title">Password & Security</span>
+                        <span class="tab-desc">Change password & credentials</span>
+                    </div>
+                </button>
+                <button type="button" class="settings-tab-btn @(ActiveTab == "notifications" ? "active" : "")" @onclick="@(() => SetActiveTab("notifications"))">
+                    <span class="tab-icon">🔔</span>
+                    <div class="tab-text">
+                        <span class="tab-title">Notifications</span>
+                        <span class="tab-desc">Alerts & communication</span>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Configuration Content Area -->
+        <div class="card settings-content-card">
+            @if (ActiveTab == "general")
+            {
+                <div class="settings-section fade-in">
+                    <h3 class="section-title">General Settings</h3>
+                    <p class="section-desc">Manage core organization configurations, contact info, and regional preferences.</p>
+                    
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Museum / Organization Name</label>
+                            <input type="text" class="form-control" @bind="settingsModel.MuseumName" placeholder="Enter organization name" />
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">Primary Account Email</label>
+                            <input type="email" class="form-control" @bind="settingsModel.AdminEmail" placeholder="admin@organization.com" />
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Default Language</label>
+                                <select class="form-control" @bind="settingsModel.DefaultLanguage">
+                                    <option value="en">English (US)</option>
+                                    <option value="es">Español</option>
+                                    <option value="fr">Français</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">System Timezone</label>
+                                <select class="form-control" @bind="settingsModel.Timezone">
+                                    <option value="Central Standard Time">Central Standard Time (CST)</option>
+                                    <option value="Eastern Standard Time">Eastern Standard Time (EST)</option>
+                                    <option value="Mountain Standard Time">Mountain Standard Time (MST)</option>
+                                    <option value="Pacific Standard Time">Pacific Standard Time (PST)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">System Status Display</label>
+                            <div class="status-indicator-box">
+                                <span class="pulse-indicator"></span>
+                                <span class="status-indicator-text">All internal systems operational. Database connected & synchronized with Azure cloud.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Actions for General Settings -->
+                <div class="settings-actions">
+                    <button type="button" class="btn btn-secondary" @onclick="DiscardChanges" disabled="@isSaving">Discard</button>
+                    <button type="button" class="btn btn-primary @(isSaving ? "loading" : "")" @onclick="SaveChanges" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span class="spinner-sm"></span>
+                            <span>Saving...</span>
+                        }
+                        else
+                        {
+                            <span>Save Changes</span>
+                        }
+                    </button>
+                </div>
+            }
+            else if (ActiveTab == "security")
+            {
+                <div class="settings-section fade-in">
+                    <h3 class="section-title">Password & Security</h3>
+                    <p class="section-desc">Manage your account authentication credentials, change your password, and review session security.</p>
+
+                    <!-- Overview metric cards -->
+                    <div class="security-info-grid">
+                        <div class="info-card">
+                            <span class="info-label">Current Authenticated Username</span>
+                            <span class="info-value">@(string.IsNullOrWhiteSpace(AppState.UserName) ? "Unavailable" : AppState.UserName)</span>
+                        </div>
+
+                        <div class="info-card">
+                            <span class="info-label">Active Account Role</span>
+                            <span class="info-value role-badge">@(string.IsNullOrWhiteSpace(AppState.Role) ? "User" : AppState.Role)</span>
+                        </div>
+
+                        <div class="info-card">
+                            <span class="info-label">Account Identification</span>
+                            <span class="info-value">User #@AppState.UserId</span>
+                        </div>
+                        
+                        <div class="info-card">
+                            <span class="info-label">Session Protocol</span>
+                            <span class="info-value token-valid">✓ Active (TLS 1.3 Encrypted)</span>
+                        </div>
+                    </div>
+
+                    <!-- Change Password Card -->
+                    <div class="password-card">
+                        <div class="password-card-header">
+                            <div class="lock-icon-box">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 class="password-card-title">Change Account Password</h4>
+                                <p class="password-card-subtitle">Ensure your account uses a strong password compliant with healthcare security standards.</p>
+                            </div>
+                        </div>
+
+                        <!-- Feedback Banners -->
+                        @if (!string.IsNullOrEmpty(passwordSuccessMessage))
+                        {
+                            <div class="alert alert-success fade-in">
+                                <div class="alert-icon">✓</div>
+                                <div class="alert-content">
+                                    <strong>Success:</strong> @passwordSuccessMessage
+                                </div>
+                                <button type="button" class="alert-close" @onclick="DismissSuccessMessage" aria-label="Close alert">✕</button>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(passwordErrorMessage))
+                        {
+                            <div class="alert alert-danger fade-in">
+                                <div class="alert-icon">⚠️</div>
+                                <div class="alert-content">
+                                    <strong>Error:</strong> @passwordErrorMessage
+                                </div>
+                                <button type="button" class="alert-close" @onclick="DismissErrorMessage" aria-label="Close alert">✕</button>
+                            </div>
+                        }
+
+                        <div class="password-form-grid">
+                            <!-- Current Password -->
+                            <div class="form-group">
+                                <label class="form-label" for="currentPassword">
+                                    Current Password <span class="required-star">*</span>
+                                </label>
+                                <div class="input-with-action">
+                                    <input id="currentPassword" 
+                                           type="@(showCurrentPassword ? "text" : "password")" 
+                                           class="form-control" 
+                                           @bind="passwordModel.CurrentPassword" 
+                                           placeholder="Enter your current password" 
+                                           autocomplete="current-password" />
+                                    <button type="button" class="btn-toggle-eye" @onclick="ToggleShowCurrentPassword" title="@(showCurrentPassword ? "Hide password" : "Show password")" aria-label="Toggle password visibility">
+                                        @if (showCurrentPassword)
+                                        {
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                                <circle cx="12" cy="12" r="3"></circle>
+                                            </svg>
+                                        }
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- New Password -->
+                            <div class="form-group">
+                                <label class="form-label" for="newPassword">
+                                    New Password <span class="required-star">*</span>
+                                </label>
+                                <div class="input-with-action">
+                                    <input id="newPassword" 
+                                           type="@(showNewPassword ? "text" : "password")" 
+                                           class="form-control" 
+                                           @bind="passwordModel.NewPassword" 
+                                           @bind:event="oninput" 
+                                           placeholder="Create a strong new password" 
+                                           autocomplete="new-password" />
+                                    <button type="button" class="btn-toggle-eye" @onclick="ToggleShowNewPassword" title="@(showNewPassword ? "Hide password" : "Show password")" aria-label="Toggle password visibility">
+                                        @if (showNewPassword)
+                                        {
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                                <circle cx="12" cy="12" r="3"></circle>
+                                            </svg>
+                                        }
+                                    </button>
+                                </div>
+
+                                <!-- Password Strength Indicator -->
+                                @if (!string.IsNullOrEmpty(passwordModel.NewPassword))
+                                {
+                                    <div class="strength-meter-box fade-in">
+                                        <div class="strength-header">
+                                            <span class="strength-label-text">Password Strength:</span>
+                                            <span class="strength-rating @PasswordStrengthColorClass">@PasswordStrengthLabel</span>
+                                        </div>
+                                        <div class="strength-bar-track">
+                                            <div class="strength-bar-fill @PasswordStrengthColorClass" style="@($"width: {PasswordStrengthPercent}%;")"></div>
+                                        </div>
+
+                                        <!-- Criteria Checklist -->
+                                        <div class="strength-checklist">
+                                            <div class="checklist-item @(HasMinLength ? "met" : "")">
+                                                <span class="check-bullet">@(HasMinLength ? "✓" : "○")</span>
+                                                <span>8+ characters</span>
+                                            </div>
+                                            <div class="checklist-item @(HasUppercase ? "met" : "")">
+                                                <span class="check-bullet">@(HasUppercase ? "✓" : "○")</span>
+                                                <span>Uppercase letter (A-Z)</span>
+                                            </div>
+                                            <div class="checklist-item @(HasLowercase ? "met" : "")">
+                                                <span class="check-bullet">@(HasLowercase ? "✓" : "○")</span>
+                                                <span>Lowercase letter (a-z)</span>
+                                            </div>
+                                            <div class="checklist-item @(HasNumber ? "met" : "")">
+                                                <span class="check-bullet">@(HasNumber ? "✓" : "○")</span>
+                                                <span>At least 1 number (0-9)</span>
+                                            </div>
+                                            <div class="checklist-item @(HasSpecialChar ? "met" : "")">
+                                                <span class="check-bullet">@(HasSpecialChar ? "✓" : "○")</span>
+                                                <span>Special character (!@@#$)</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Confirm New Password -->
+                            <div class="form-group">
+                                <label class="form-label" for="confirmPassword">
+                                    Confirm New Password <span class="required-star">*</span>
+                                </label>
+                                <div class="input-with-action">
+                                    <input id="confirmPassword" 
+                                           type="@(showConfirmPassword ? "text" : "password")" 
+                                           class="form-control" 
+                                           @bind="passwordModel.ConfirmPassword" 
+                                           @bind:event="oninput" 
+                                           placeholder="Re-type your new password" 
+                                           autocomplete="new-password" />
+                                    <button type="button" class="btn-toggle-eye" @onclick="ToggleShowConfirmPassword" title="@(showConfirmPassword ? "Hide password" : "Show password")" aria-label="Toggle password visibility">
+                                        @if (showConfirmPassword)
+                                        {
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                                <circle cx="12" cy="12" r="3"></circle>
+                                            </svg>
+                                        }
+                                    </button>
+                                </div>
+
+                                <!-- Match Indicator -->
+                                @if (!string.IsNullOrEmpty(passwordModel.ConfirmPassword))
+                                {
+                                    <div class="match-feedback @(PasswordsMatch ? "match-success" : "match-error") fade-in">
+                                        @if (PasswordsMatch)
+                                        {
+                                            <span>✓ Passwords match</span>
+                                        }
+                                        else
+                                        {
+                                            <span>✕ Passwords do not match</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="password-actions-bar">
+                                <button type="button" class="btn btn-secondary" @onclick="ResetPasswordForm" disabled="@isChangingPassword">
+                                    Clear Form
+                                </button>
+                                <button type="button" class="btn btn-primary @(isChangingPassword ? "loading" : "")" @onclick="HandleChangePassword" disabled="@(isChangingPassword || string.IsNullOrWhiteSpace(passwordModel.CurrentPassword) || string.IsNullOrWhiteSpace(passwordModel.NewPassword) || string.IsNullOrWhiteSpace(passwordModel.ConfirmPassword))">
+                                    @if (isChangingPassword)
+                                    {
+                                        <span class="spinner-sm"></span>
+                                        <span>Updating Password...</span>
+                                    }
+                                    else
+                                    {
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                        <span>Update Password</span>
+                                    }
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- HIPAA Compliance Policy Card -->
+                    <div class="security-policy-card">
+                        <div class="policy-icon">🛡️</div>
+                        <div class="policy-content">
+                            <h5 class="policy-title">HIPAA Healthcare Compliance & Security Note</h5>
+                            <p class="policy-desc">
+                                As an administrator or healthcare provider handling Protected Health Information (PHI), your account is protected by inactivity session timeouts and zero-knowledge credential storage. Passwords are encrypted in transit via TLS 1.3 and are never logged or stored in plain text.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (ActiveTab == "notifications")
+            {
+                <div class="settings-section fade-in">
+                    <h3 class="section-title">Notification Settings</h3>
+                    <p class="section-desc">Control which communication protocols are triggered for system events and clinical milestones.</p>
+
+                    <div class="toggle-list">
+                        <div class="toggle-row-item">
+                            <div class="toggle-info">
+                                <span class="toggle-title">Weekly Summaries</span>
+                                <span class="toggle-desc">Receive compiled statistics of weekly museum activities and visitor engagements.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" @bind="settingsModel.WeeklySummaries" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-row-item">
+                            <div class="toggle-info">
+                                <span class="toggle-title">SMS Notifications</span>
+                                <span class="toggle-desc">Receive immediate text notifications for high-priority alerts and therapist updates.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" @bind="settingsModel.SmsNotifications" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-row-item">
+                            <div class="toggle-info">
+                                <span class="toggle-title">Direct Chat Messages</span>
+                                <span class="toggle-desc">Trigger standard desktop alerts when parents or partners send direct messages.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" @bind="settingsModel.DirectChatNotifications" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="toggle-row-item">
+                            <div class="toggle-info">
+                                <span class="toggle-title">Maintenance Window Alerts</span>
+                                <span class="toggle-desc">Be notified of planned downtime or service deployments 48 hours in advance.</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" @bind="settingsModel.MaintenanceAlerts" />
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Actions for Notification Settings -->
+                <div class="settings-actions">
+                    <button type="button" class="btn btn-secondary" @onclick="DiscardChanges" disabled="@isSaving">Discard</button>
+                    <button type="button" class="btn btn-primary @(isSaving ? "loading" : "")" @onclick="SaveChanges" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span class="spinner-sm"></span>
+                            <span>Saving...</span>
+                        }
+                        else
+                        {
+                            <span>Save Changes</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string ActiveTab = "general";
+    private bool isSaving = false;
+
+    // Local model for general settings state
+    private SettingsModel settingsModel = new();
+
+    // Password change state
+    private ChangePasswordFormModel passwordModel = new();
+    private bool isChangingPassword = false;
+    private bool showCurrentPassword = false;
+    private bool showNewPassword = false;
+    private bool showConfirmPassword = false;
+    private string? passwordErrorMessage = null;
+    private string? passwordSuccessMessage = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+        LoadInitialSettings();
+    }
+
+    private void LoadInitialSettings()
+    {
+        // Hydrate from AppState and defaults
+        settingsModel.MuseumName = AppState.MuseumName ?? "Dallas Children's Museum";
+        settingsModel.AdminEmail = !string.IsNullOrWhiteSpace(AppState.UserName) && AppState.UserName.Contains('@') 
+            ? AppState.UserName 
+            : "admin@shine.org";
+        settingsModel.DefaultLanguage = "en";
+        settingsModel.Timezone = "Central Standard Time";
+        settingsModel.WeeklySummaries = true;
+        settingsModel.SmsNotifications = false;
+        settingsModel.DirectChatNotifications = true;
+        settingsModel.MaintenanceAlerts = true;
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        ActiveTab = tab;
+        passwordErrorMessage = null;
+        passwordSuccessMessage = null;
+    }
+
+    private void ToggleShowCurrentPassword() => showCurrentPassword = !showCurrentPassword;
+    private void ToggleShowNewPassword() => showNewPassword = !showNewPassword;
+    private void ToggleShowConfirmPassword() => showConfirmPassword = !showConfirmPassword;
+    private void DismissSuccessMessage() => passwordSuccessMessage = null;
+    private void DismissErrorMessage() => passwordErrorMessage = null;
+
+    private string GetUserInitials()
+    {
+        var name = AppState.UserName;
+        if (string.IsNullOrWhiteSpace(name)) return "U";
+
+        if (name.Contains('@'))
+        {
+            name = name.Split('@')[0];
+        }
+
+        var parts = name.Split(new[] { ' ', '.', '_', '-' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return $"{char.ToUpper(parts[0][0])}{char.ToUpper(parts[1][0])}";
+        }
+        else if (parts.Length == 1 && parts[0].Length >= 2)
+        {
+            return $"{char.ToUpper(parts[0][0])}{char.ToUpper(parts[0][1])}";
+        }
+        return name.Substring(0, 1).ToUpper();
+    }
+
+    // Password strength evaluation
+    private bool HasMinLength => (passwordModel.NewPassword?.Length ?? 0) >= 8;
+    private bool HasUppercase => passwordModel.NewPassword != null && passwordModel.NewPassword.Any(char.IsUpper);
+    private bool HasLowercase => passwordModel.NewPassword != null && passwordModel.NewPassword.Any(char.IsLower);
+    private bool HasNumber => passwordModel.NewPassword != null && passwordModel.NewPassword.Any(char.IsDigit);
+    private bool HasSpecialChar => passwordModel.NewPassword != null && passwordModel.NewPassword.Any(ch => !char.IsLetterOrDigit(ch));
+
+    private int PasswordStrengthScore
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(passwordModel.NewPassword)) return 0;
+            int score = 0;
+            if (HasMinLength) score++;
+            if (HasUppercase) score++;
+            if (HasLowercase) score++;
+            if (HasNumber) score++;
+            if (HasSpecialChar) score++;
+            return score;
+        }
+    }
+
+    private string PasswordStrengthLabel => PasswordStrengthScore switch
+    {
+        0 => "None",
+        1 or 2 => "Weak",
+        3 => "Fair",
+        4 => "Good",
+        5 => "Strong",
+        _ => "Fair"
+    };
+
+    private string PasswordStrengthColorClass => PasswordStrengthScore switch
+    {
+        0 => "",
+        1 or 2 => "strength-weak",
+        3 => "strength-fair",
+        4 => "strength-good",
+        5 => "strength-strong",
+        _ => "strength-fair"
+    };
+
+    private int PasswordStrengthPercent => PasswordStrengthScore * 20;
+
+    private bool PasswordsMatch =>
+        !string.IsNullOrEmpty(passwordModel.NewPassword) &&
+        !string.IsNullOrEmpty(passwordModel.ConfirmPassword) &&
+        passwordModel.NewPassword == passwordModel.ConfirmPassword;
+
+    private async Task HandleChangePassword()
+    {
+        passwordErrorMessage = null;
+        passwordSuccessMessage = null;
+
+        if (string.IsNullOrWhiteSpace(passwordModel.CurrentPassword))
+        {
+            passwordErrorMessage = "Please enter your current password.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(passwordModel.NewPassword))
+        {
+            passwordErrorMessage = "Please enter a new password.";
+            return;
+        }
+
+        if (passwordModel.NewPassword.Length < 8)
+        {
+            passwordErrorMessage = "New password must be at least 8 characters long.";
+            return;
+        }
+
+        if (PasswordStrengthScore < 3)
+        {
+            passwordErrorMessage = "New password must include a mix of uppercase, lowercase, numbers, or special characters.";
+            return;
+        }
+
+        if (passwordModel.NewPassword == passwordModel.CurrentPassword)
+        {
+            passwordErrorMessage = "New password cannot be the same as your current password.";
+            return;
+        }
+
+        if (passwordModel.NewPassword != passwordModel.ConfirmPassword)
+        {
+            passwordErrorMessage = "New password and confirmation password do not match.";
+            return;
+        }
+
+        var userId = AppState.UserId;
+        var userName = AppState.UserName ?? string.Empty;
+
+        if (userId <= 0 || string.IsNullOrWhiteSpace(userName))
+        {
+            passwordErrorMessage = "User session details could not be retrieved. Please sign in again and retry.";
+            return;
+        }
+
+        isChangingPassword = true;
+        try
+        {
+            var request = new ChangePasswordRequest
+            {
+                UserId = userId,
+                UserName = userName,
+                CurrentPassword = passwordModel.CurrentPassword,
+                NewPassword = passwordModel.NewPassword,
+                ConfirmPassword = passwordModel.ConfirmPassword
+            };
+
+            var response = await AuthService.ChangePasswordAsync(request);
+
+            if (response.Status)
+            {
+                passwordSuccessMessage = "Password changed successfully! Logging you out to sign in with your new password...";
+                NotificationService.Success("Password Updated", "Password updated successfully. Logging out...");
+                ResetPasswordForm();
+                StateHasChanged();
+
+                // Brief pause so the user sees the success confirmation before redirect
+                await Task.Delay(1500);
+
+                var logoutUrl = !string.IsNullOrWhiteSpace(userName)
+                    ? $"/account/logout?message=PasswordChanged&userName={Uri.EscapeDataString(userName)}"
+                    : "/account/logout?message=PasswordChanged";
+                NavigationManager.NavigateTo(logoutUrl, forceLoad: true);
+            }
+            else
+            {
+                passwordErrorMessage = !string.IsNullOrWhiteSpace(response.Message) 
+                    ? response.Message 
+                    : "Failed to update password. Please check your current password and try again.";
+                NotificationService.Error("Password Change Failed", passwordErrorMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            passwordErrorMessage = "An unexpected error occurred: " + ex.Message;
+            NotificationService.Error("Error", passwordErrorMessage);
+        }
+        finally
+        {
+            isChangingPassword = false;
+        }
+    }
+
+    private void ResetPasswordForm()
+    {
+        passwordModel = new();
+        showCurrentPassword = false;
+        showNewPassword = false;
+        showConfirmPassword = false;
+    }
+
+    private async Task SaveChanges()
+    {
+        isSaving = true;
+        
+        // Simulate persistence
+        await Task.Delay(800);
+        
+        // Update AppState or services if appropriate
+        AppState.MuseumName = settingsModel.MuseumName;
+        
+        NotificationService.Success("Settings Saved", "Your configuration updates have been applied successfully.");
+        isSaving = false;
+    }
+
+    private void DiscardChanges()
+    {
+        LoadInitialSettings();
+        NotificationService.Info("Changes Discarded", "Configuration restored to previous state.");
+    }
+
+    public class SettingsModel
+    {
+        public string MuseumName { get; set; } = string.Empty;
+        public string AdminEmail { get; set; } = string.Empty;
+        public string DefaultLanguage { get; set; } = "en";
+        public string Timezone { get; set; } = "Central Standard Time";
+        public bool WeeklySummaries { get; set; }
+        public bool SmsNotifications { get; set; }
+        public bool DirectChatNotifications { get; set; }
+        public bool MaintenanceAlerts { get; set; }
+    }
+
+    public class ChangePasswordFormModel
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

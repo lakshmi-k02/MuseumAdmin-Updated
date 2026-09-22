@@ -1,0 +1,2050 @@
+@page "/"
+@page "/home"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize]
+
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+@inject MuseumAdmin.Services.IUserCacheService UserCache
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@using Microsoft.AspNetCore.Components.Forms
+@using System.IO
+@using MuseumAdmin.Models
+
+@using MuseumAdmin.Components.Shared
+
+@inject MuseumAdmin.Services.AppState AppState
+
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+
+<!-- Placeholder styles for background loading -->
+<style>
+/* Placeholder card and shimmer animation */
+.card-grid .card.placeholder { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 2px rgba(16,24,40,0.04); display:flex; flex-direction:column; gap:8px; }
+.placeholder .image-placeholder { height: 140px; border-radius: 8px; background: linear-gradient(90deg, #f3f4f6 25%, #e6edf4 37%, #f3f4f6 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+.placeholder .text-line { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #f3f4f6 25%, #e6edf4 37%, #f3f4f6 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+.placeholder .text-line.short { width: 40%; }
+.placeholder .text-line.long { width: 80%; }
+@@keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+</style>
+
+<style>
+/* Mobile-only filter collapse/expand behaviour (inline arrow next to status pills) */
+.mobile-filter-arrow { display: none; background: transparent; border: none; padding: 6px; border-radius: 6px; font-weight: 700; color: var(--color-text, #111827); cursor: pointer; }
+
+@@media (max-width: 640px) {
+    .mobile-filter-arrow { display: inline-flex; align-items: center; justify-content: center; }
+    .filter-container.mobile-collapsed {  overflow: hidden; position: relative; transition: max-height .25s ease; }
+    .filter-container.mobile-collapsed::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 24px; background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,1)); pointer-events: none; }
+    .filter-container.mobile-expanded { max-height: 2000px; transition: max-height .25s ease; }
+
+    /* When collapsed, hide non-status filter groups on mobile */
+    .filter-container.mobile-collapsed .date-filters,
+    .filter-container.mobile-collapsed .search-filter,
+    .filter-container.mobile-collapsed .filter-divider { display: none !important; }
+
+    .filter-group.status-filters { display: block; }
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .status-pills { display: flex; align-items: center; flex-wrap: wrap; }
+
+    .mobile-filter-arrow .arrow { display: inline-block; transform: rotate(0deg); transition: transform .18s ease; }
+    .filter-container.mobile-expanded .mobile-filter-arrow .arrow { transform: rotate(180deg); }
+}
+</style>
+
+<style>
+/* Reusable, modern chevron used in user menu and filter toggles */
+.dropdown-chevron { display: inline-block; vertical-align: middle; transition: transform .18s ease; stroke: currentColor; }
+</style>
+
+<style>
+/* Disable artwork navigation when in edit mode */
+.drawer-arrow[disabled] { opacity: 0.36; cursor: not-allowed; pointer-events: none; }
+.artwork-click-left.disabled, .artwork-click-right.disabled { pointer-events: none; }
+.artwork-click-left.disabled::after, .artwork-click-right.disabled::after { /* visually indicate disabled if desired */ opacity: 0.0; }
+</style>
+
+<!-- Main Content Area Wrapper -->
+<div>
+
+    <!-- Sidebar Overlay for Mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay" @onclick="CloseMobileSidebar"></div>
+
+    <!-- Top Bar -->
+    <TopBar Title="@TopBarTitle" 
+            ButtonText="Create Messages"
+            OnButtonClick="CreateNewMessage" />
+    
+
+    <!-- Content Container -->
+    <div class="content-container">
+
+        <!-- Gallery Header -->
+        <div class="gallery-header">
+            <p class="gallery-description">
+                Explore artwork and content submitted by children. Click on names or phone numbers to view
+                profiles.
+            </p>
+        </div>
+
+        <div class="filter-container @(mobileFiltersExpanded ? "mobile-expanded" : "mobile-collapsed")">
+            <!-- Status Filters (always visible on mobile) -->
+            <div class="filter-group status-filters">
+                <div class="status-row">
+                    <div class="status-pills">
+                        <button type="button" class="filter-tab @(selectedFilter == FilterType.All ? "active" : "")" @onclick="(() => SetFilter(FilterType.All))">
+                            All
+                            <span class="count-badge">@GetCount(FilterType.All)</span>
+                        </button>
+
+                        <button type="button" class="filter-tab @(selectedFilter == FilterType.Pending ? "active" : "")" @onclick="(() => SetFilter(FilterType.Pending))">
+                            Pending
+                            <span class="count-badge">@GetCount(FilterType.Pending)</span>
+                        </button>
+
+                        <button type="button" class="filter-tab @(selectedFilter == FilterType.Approved ? "active" : "")" @onclick="(() => SetFilter(FilterType.Approved))">
+                            Approved
+                            <span class="count-badge">@GetCount(FilterType.Approved)</span>
+                        </button>
+
+                        <button type="button" class="filter-tab @(selectedFilter == FilterType.Rejected ? "active" : "")" @onclick="(() => SetFilter(FilterType.Rejected))">
+                            Rejected
+                            <span class="count-badge">@GetCount(FilterType.Rejected)</span>
+                        </button>
+                    </div>
+
+                    @* Clear filters button: resets to default Pending filter, clears search and date filters *@
+                    @* @if (selectedFilter != FilterType.Pending || dateMode != "Any" || !string.IsNullOrEmpty(searchText))
+                    {
+                        <button type="button" class="filter-clear-btn" @onclick="ClearFilters" title="Clear filters" style="margin-left:8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    } *@
+
+                    <button class="mobile-filter-arrow mobile-only" @onclick="ToggleFiltersMobile" aria-expanded="@(mobileFiltersExpanded.ToString().ToLower())">
+                        <svg class="dropdown-chevron arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="filter-divider"></div>
+
+            <!-- Date Range Filter -->
+            <div class="filter-group date-filters">
+                <div class="filter-item">
+                    <div class="filter-input-wrapper">
+                        <span class="filter-icon">📅</span>
+                        <select @onchange="OnDateModeChanged" value="@dateMode" class="date-mode-select">
+                            <option value="Any">Any Time</option>
+                            <option value="Exact">Specific Date</option>
+                            <option value="Range">Date Range</option>
+                        </select>
+                    </div>
+                </div>
+
+                @if (dateMode != "Any")
+                {
+                    <div class="date-inputs-container">
+                        @if (dateMode == "Exact")
+                        {
+                            <div class="filter-item">
+                                <div class="filter-input-wrapper">
+                                    <input type="date" value="@exactDateString" @onchange="OnExactDateChanged" class="date-input" />
+                                </div>
+                            </div>
+                        }
+                        else if (dateMode == "Range")
+                        {
+                            <div class="filter-item">
+                                <div class="filter-input-wrapper">
+                                    <input type="date" value="@rangeStartString" @onchange="OnRangeStartChanged" class="date-input" placeholder="Start" />
+                                </div>
+                            </div>
+                            <span class="range-separator">to</span>
+                            <div class="filter-item">
+                                <div class="filter-input-wrapper">
+                                    <input type="date" value="@rangeEndString" @onchange="OnRangeEndChanged" class="date-input" placeholder="End" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <!-- Search Filter -->
+            <div class="filter-group search-filter">
+                <div class="modern-search-wrapper">
+                    <svg class="search-icon-left" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input class="modern-search-input" 
+                           type="text" 
+                           placeholder="Search by name, title, phone..." 
+                           value="@searchText" 
+                           @oninput="OnSearchInput" />
+                    
+                    @if (!string.IsNullOrEmpty(searchText))
+                    {
+                        <button type="button" class="clear-search-btn" @onclick="ClearSearch" title="Clear search">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    }
+                </div>
+                @* Trash (clear filters) button placed beside search input; visible when filters differ from defaults *@
+                    @if (selectedFilter != FilterType.Pending || dateMode != "Any" || !string.IsNullOrEmpty(searchText))
+                    {
+                        <button type="button" class="filter-trash-btn" @onclick="ClearFilters" title="Clear filters">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    }
+            </div>
+        </div>
+
+
+@if (!initialPageReady)
+{
+    <div class="card-grid">
+        @for (int i = 0; i < pageSize; i++)
+        {
+            <div class="card placeholder">
+                <div class="image-placeholder"></div>
+                <div class="text-line long"></div>
+                <div class="text-line short"></div>
+            </div>
+        }
+    </div>
+}
+else if (!filteredMessages.Any())
+{
+    if (GetCount(selectedFilter) == 0)
+    {
+        <div class="all-caught-up-state">
+            @if (selectedFilter == FilterType.Pending)
+            {
+                <div class="success-icon-container">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="success-icon" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div class="state-title">All caught up!</div>
+                <div class="state-description">There are no pending items requiring your attention right now.</div>
+            }
+            else if (selectedFilter == FilterType.Approved)
+            {
+                <div class="success-icon-container blue">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="success-icon" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div class="state-title">No Approved Items</div>
+                <div class="state-description">You haven't approved any artwork submissions yet.</div>
+            }
+            else if (selectedFilter == FilterType.Rejected)
+            {
+                <div class="success-icon-container red">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="success-icon" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </div>
+                <div class="state-title">No Rejected Items</div>
+                <div class="state-description">There are no rejected items in the list.</div>
+            }
+            else
+            {
+                <div class="success-icon-container secondary">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="success-icon" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                </div>
+                <div class="state-title">No Submissions</div>
+                <div class="state-description">There are no submissions in the system yet.</div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="no-results" style="text-align:center; padding:40px; color:var(--color-text-secondary);">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7; margin-bottom:12px;">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            <div style="font-size:16px; font-weight:600;">No Artwork Found</div>
+            <div style="font-size:13px; margin-top:6px; color:var(--color-text-muted);">Try a different filter or date range.</div>
+        </div>
+    }
+}
+else
+{
+    <div class="card-grid">
+        @{ 
+            var visibleList = visibleMessages.ToList(); 
+            int filled = visibleList.Count; 
+            var filteredAll = allFetched.Where(m => FilterByApproval(m) && FilterByDate(m) && FilterBySearch(m)).ToList();
+            var expectedOnPage = Math.Min(pageSize, Math.Max(0, filteredAll.Count - (currentPage - 1) * pageSize));
+            var placeholders = Math.Max(0, expectedOnPage - filled);
+        }
+
+        @for (int i = 0; i < filled; i++)
+        {
+            var item = visibleList[i];
+            var animatingOut = animatingCards.Contains(item.messageId);
+            var isSelected = selectedMessageIds.Contains(item.messageId);
+            <AdminCard Item="@item" 
+                      OnOpen="OpenDetail" 
+                      OnEdit="HandleEdit" 
+                      OnDuplicate="HandleDuplicate"
+                      OnDelete="HandleDelete" 
+                      OnApprove="QuickApprove"
+                      OnReject="QuickReject"
+                      IsAnimatingOut="@animatingOut"
+                      IsSelected="@isSelected"
+                      OnSelectionChange="@(selected => ToggleSelection(item.messageId, selected))" />
+        }
+
+        @for (int p = 0; p < placeholders; p++)
+        {
+            <div class="card placeholder">
+                <div class="image-placeholder"></div>
+                <div class="text-line long"></div>
+                <div class="text-line short"></div>
+            </div>
+        }
+    </div>
+}
+<!-- Pagination Controls -->
+@if (filteredMessages.Any())
+{
+    <Pagination TotalCount="filteredMessages.Count()" PageSize="@pageSize" CurrentPage="@currentPage"
+                OnPageChanged="GoToPage" OnPageSizeChanged="SetPageSize" />
+}
+    </div>
+
+
+
+@if (selectedMessageIds.Count > 1)
+{
+
+    <div class="bulk-toolbar-floating">
+        <div class="bulk-count">
+            @selectedMessageIds.Count items selected
+        </div>
+        <div class="bulk-actions-group">
+            @if (selectedMessageIds.Count < filteredMessages.Count())
+            {
+                <button class="bulk-btn secondary" @onclick="SelectAll">
+                    Select All
+                </button>
+                <div class="bulk-divider"></div>
+            }
+            
+            <button class="bulk-btn success-solid" @onclick="BulkApprove">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Approve
+            </button>
+            <button class="bulk-btn danger-solid" @onclick="BulkReject">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                Reject
+            </button>
+        </div>
+        <button class="btn-close-toolbar" @onclick="ClearSelection">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+    </div>
+}
+</div>
+
+<!-- Floating Action Button (Mobile Only) -->
+<button class="fab mobile-only" id="fabButton" @onclick="CreateNewMessage" aria-label="Add User/Content">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+</button>
+
+<div id="bulkActions" class="bulk-toolbar" style="display: none;">
+    <div class="count">0 selected</div>
+    <div class="bulk-buttons">
+        <button id="bulkReject" class="btn btn-danger btn-sm">Reject Selected</button>
+        <button id="bulkApprove" class="btn btn-primary btn-sm">Approve Selected</button>
+    </div>
+</div>
+
+
+    @* Detail Drawer overlay *@
+    @if (isOverlayOpen && selectedMessage != null)
+    {
+        <div class="overlay" @onclick="CloseDetail" style="opacity: 1; pointer-events: auto;"></div>
+        <div class="drawer @(isOverlayOpen ? "mobile-open" : "")" style="transform: translateX(0);">
+            <div class="drawer-header">
+                <h2>
+                    @(selectedMessage.messageId == 0 ? "Create New Message" : $"Artwork by {selectedMessage.artistName}")
+                </h2>
+                <div class="drawer-header-actions">
+                    @if (selectedMessage.messageId != 0)
+                    {
+                        <button class="drawer-action-btn edit" @onclick="EditSelected" title="Edit artwork">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
+                        <button class="drawer-action-btn duplicate" @onclick="(() => HandleDuplicate(selectedMessage))" title="Duplicate artist details">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                        </button>
+                        <button class="drawer-action-btn delete" @onclick="DeleteSelected" title="Delete artwork">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </button>
+                    }
+                    <button class="drawer-close" @onclick="CloseDetail" aria-label="Close drawer">×</button>
+                </div>
+            </div>
+            
+            <div class="drawer-content">
+                <!-- Artwork Preview Section -->
+                @if (selectedMessage.messageId != 0)
+                {
+                    <div class="drawer-section artwork-only">
+                        @if (!string.IsNullOrEmpty(selectedMessage.messageImage))
+                        {
+                            <div class="artwork-preview-container">
+                                <div class="artwork-preview-blur-bg" style="background-image: url('@selectedMessage.messageImage');"></div>
+                                <img src="@selectedMessage.messageImage" 
+                                     alt="Artwork by @selectedMessage.artistName" 
+                                     class="artwork-preview-image" />
+
+                                <!-- Prev/Next arrow buttons (hidden while editing or at list ends) -->
+                                @if (!isEditMode)
+                                {
+                                    if (HasPrevArtwork)
+                                    {
+                                        <button type="button" class="drawer-arrow left" @onclick="ShowPrevArtwork" aria-label="Previous artwork">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="15 18 9 12 15 6"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="artwork-click-left" @onclick="ShowPrevArtwork"></div>
+                                    }
+
+                                    if (HasNextArtwork)
+                                    {
+                                        <button type="button" class="drawer-arrow right" @onclick="ShowNextArtwork" aria-label="Next artwork">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="9 18 15 12 9 6"></polyline>
+                                            </svg>
+                                        </button>
+                                        <div class="artwork-click-right" @onclick="ShowNextArtwork"></div>
+                                    }
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="image-placeholder" style="height: 180px; background: #f8fafc; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #94a3b8; border: 1px dashed #e2e8f0; margin: 24px;">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <polyline points="21 15 16 10 5 21"></polyline>
+                                </svg>
+                                <span style="font-size: 13px; font-weight: 600; margin-top: 12px;">No Image Provided</span>
+                            </div>
+                        }
+
+                        <div class="drawer-artwork-header">
+                            <h3 style="font-size: 24px; font-weight: 800; color: #1e293b; margin: 0 0 4px 0;">@selectedMessage.messageCreatorName</h3>
+                            <p style="color: #64748b; font-size: 16px; margin: 0; font-weight: 500;">@(selectedMessage.artTitle ?? selectedMessage.messageTitle)</p>
+                        </div>
+                    </div>
+                }
+
+                @if (isEditMode)
+                {
+                    <div class="drawer-section edit-form">
+                        <span class="drawer-section-title">@(selectedMessage.messageId == 0 ? "New Message Details" : "Edit Message")</span>
+                        <div class="edit-grid" style="display:flex;flex-direction:column;gap:12px;">
+                            <div>
+                                <label>Message Creator Name</label>
+                                <input class="form-control" @bind="editModel.messageCreatorName" />
+                            </div>
+
+                            <div>
+                                <label>User Email Address</label>
+                                <input class="form-control" @bind="editModel.userEmailAddress" />
+                            </div>
+
+                            <div>
+                                <label>Art Title</label>
+                                <input class="form-control" @bind="editModel.artTitle" />
+                            </div>
+
+                            <div>
+                                <label>Artist Name</label>
+                                <input class="form-control" @bind="editModel.artistName" />
+                            </div>
+
+                            <!-- <div>
+                                <label>Museum Name</label>
+                                <input class="form-control" value="@editModel.musiumName" readonly />
+                            </div> -->
+
+                            <!-- <div>
+                                <label>Approved Date</label>
+                                <input class="form-control" value="@(string.IsNullOrEmpty(editModel.approvedDateString) ? (selectedMessage?.approvedDate?.ToString("dd MMM yyyy, hh:mm tt") ?? "") : editModel.approvedDateString)" readonly />
+                            </div> -->
+
+                            <div style="display:flex;gap:8px;">
+                                <div style="flex:1">
+                                    <label>Country</label>
+                                    <select class="form-control" @onchange="OnCountryChanged" value="@selectedCountryId">
+                                        <option value="0">Select Country</option>
+                                        @foreach (var c in countries)
+                                        {
+                                            <option value="@c.countryId">@c.countrySMSId @c.countryName</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div style="flex:1">
+                                    <label>Phone Number</label>
+                                    <input class="form-control" @bind="editModel.userPhoneNumber" placeholder="Phone Number" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label>Message Image</label>
+                                <div style="display:flex; flex-direction:column; gap:8px; align-items:stretch;">
+                                    <input class="form-control" placeholder="Image URL" @bind="editModel.messageImage" />
+                                    <!-- Custom File Upload Button -->
+                                    <div class="file-upload-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="17 8 12 3 7 8"></polyline>
+                                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                                        </svg>
+                                        <span>Upload</span>
+                                        <InputFile OnChange="OnImageFileChanged" accept="image/*" class="file-input-hidden" />
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(editModel.messageImage))
+                                {
+                                    <div style="margin-top:8px; max-width:220px;">
+                                        <img src="@editModel.messageImage" style="max-width:100%; border-radius:6px; border:1px solid #e5e7eb;" />
+                                    </div>
+                                }
+                            </div>
+
+                            <div>
+                                <label>Message Audio</label>
+                                <div style="display:flex; flex-direction:column; gap:8px; align-items:stretch;">
+                                    <input class="form-control" placeholder="Audio URL" @bind="editModel.messageAudio" />
+                                    <div class="file-upload-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="17 8 12 3 7 8"></polyline>
+                                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                                        </svg>
+                                        <span>Upload</span>
+                                        <InputFile OnChange="OnAudioFileChanged" accept="audio/*" class="file-input-hidden" />
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(editModel.messageAudio))
+                                {
+                                    <div style="margin-top:8px;">
+                                        <audio controls src="@editModel.messageAudio">Your browser does not support audio.</audio>
+                                    </div>
+                                }
+                            </div>
+
+                            <div>
+                                <label>Tags</label>
+                                <div class="tag-input-group">
+                                    <input class="form-control" placeholder="Add a tag..." @bind="newTag" @bind:event="oninput" @onkeyup="HandleTagKeyUp" />
+                                    <button class="btn-icon-only" @onclick="AddTag" title="Add Tag">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div class="tags-container">
+                                    @if (editModel.tags != null)
+                                    {
+                                        @foreach (var t in editModel.tags)
+                                        {
+                                            <div class="tag-pill">
+                                                <span>@t</span>
+                                                <button class="tag-remove-btn" @onclick="(() => RemoveTag(t))" title="Remove tag">
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- Audio Message Section -->
+                @if (!string.IsNullOrEmpty(selectedMessage.messageAudio))
+                {
+                    <div class="drawer-section">
+                        <span class="drawer-section-title">Audio Recording</span>
+                        <div class="audio-player-wrapper">
+                            <audio controls>
+                                <source src="@selectedMessage.messageAudio" type="audio/mpeg" />
+                                Your browser does not support audio.
+                            </audio>
+                        </div>
+                    </div>
+                }
+
+                <!-- Submission Details Section -->
+                @if (selectedMessage.messageId != 0)
+                {
+                    <div class="drawer-section">
+                        <span class="drawer-section-title">Submission Details</span>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Museum</span>
+                                <span class="info-value">@selectedMessage.musiumName</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Artist Age</span>
+                                <span class="info-value">@selectedMessage.artistAge</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Submitted On</span>
+                                <span class="info-value">@selectedMessage.createdDate?.ToString("dd MMM yyyy, hh:mm tt")</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Device Info</span>
+                                <span class="info-value">@selectedMessage.deviceDetails</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contact Information Section -->
+                    @if (!string.IsNullOrEmpty(selectedMessage.userPhoneNumber) || !string.IsNullOrEmpty(selectedMessage.userEmailAddress))
+                    {
+                        <div class="drawer-section">
+                            <span class="drawer-section-title">Contact Information</span>
+                            <div class="info-grid">
+                                @if (!string.IsNullOrEmpty(selectedMessage.userPhoneNumber))
+                                {
+                                    <div class="info-item">
+                                        <span class="info-label">Phone</span>
+                                        <span class="info-value">@selectedMessage.countryCode @selectedMessage.userPhoneNumber</span>
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(selectedMessage.userEmailAddress))
+                                {
+                                    <div class="info-item">
+                                        <span class="info-label">Email</span>
+                                        <span class="info-value">@selectedMessage.userEmailAddress</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Approval Status Section -->
+                    <div class="drawer-section">
+                        <span class="drawer-section-title">Current Status</span>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">Status</span>
+                                <div>
+                                    <span class="status-pill @(selectedMessage.isApproved == true ? "approved" : (selectedMessage.isApproved == false ? "rejected" : "pending"))">
+                                        @(selectedMessage.isApproved == true ? "Approved" : (selectedMessage.isApproved == false ? "Rejected" : "Pending Approval"))
+                                    </span>
+                                </div>
+                            </div>
+                            @if (selectedMessage.isApproved == true)
+                            {
+                                <div class="info-item">
+                                    <span class="info-label">Approved Date</span>
+                                    <span class="info-value">@selectedMessage.approvedDate?.ToString("dd MMM yyyy, hh:mm tt")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="drawer-actions">
+                @if (isEditMode)
+                {
+                    <button class="btn cancel" @onclick="CancelEdit">Cancel</button>
+                    <button class="btn primary" @onclick="SaveEdit">@(selectedMessage.messageId == 0 ? "Create" : "Update")</button>
+                }
+                else
+                {
+                    <button class="btn reject" @onclick="RejectSelected">Reject</button>
+                    <button class="btn approve" @onclick="ApproveSelected">Approve</button>
+                }
+            </div>
+        </div>
+    }
+
+    @* Confirmation Modal *@
+    @if (showConfirmationModal && (messageToConfirm != null || confirmationAction == "BulkReject"))
+    {
+        <div class="modal-overlay" @onclick="CancelAction">
+            <div class="modal-card" @onclick:stopPropagation="true">
+                <div class="modal-icon-wrapper" style="@(confirmationAction == "Reject" ? "color: #dc2626; background-color: #fee2e2;" : "color: #ef4444; background-color: #fee2e2;")">
+                    @if (confirmationAction == "Delete")
+                    {
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                    }
+                    else if (confirmationAction == "BulkReject")
+                    {
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                        </svg>
+                        @* <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                             <circle cx="12" cy="12" r="10"></circle>
+                             <line x1="15" y1="9" x2="9" y2="15"></line>
+                             <line x1="9" y1="9" x2="15" y2="15"></line>
+                         </svg> *@
+                    }
+                    else
+                    {
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    }
+                </div>
+                <h3 class="modal-title">
+                    @if (confirmationAction == "Delete") { <text>Delete Artwork?</text> }
+                    else if (confirmationAction == "BulkReject") { <text>Reject @selectedMessageIds.Count Artworks?</text> }
+                    else { <text>Reject Artwork?</text> }
+                </h3>
+                <p class="modal-description">
+                    @if (confirmationAction == "Delete")
+                    {
+                        <text>Are you sure you want to delete this artwork by <strong>@messageToConfirm?.messageCreatorName</strong>? This action cannot be undone.</text>
+                    }
+                    else if (confirmationAction == "BulkReject")
+                    {
+                         <text>Are you sure you want to reject <strong>@selectedMessageIds.Count</strong> selected artworks? They will be moved to the Rejected list.</text>
+                    }
+                    else
+                    {
+                        <text>Are you sure you want to reject this artwork by <strong>@messageToConfirm?.messageCreatorName</strong>? It will be moved to the Rejected list.</text>
+                    }
+                </p>
+                <div class="modal-actions">
+                    <button class="btn-modal cancel" @onclick="CancelAction">Cancel</button>
+                    <button class="btn-modal confirm" @onclick="ConfirmAction">
+                        @(confirmationAction == "Delete" ? "Delete" : "Reject")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @code {
+
+    private bool isUserMenuOpen = false;
+    private string displayName = "Admin";
+    private string TopBarTitle => !string.IsNullOrWhiteSpace(AppState.MuseumName)
+        ? CapitalizeFirst(AppState.MuseumName)
+        : "Children's Art Gallery";
+    private string CapitalizeFirst(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input))
+                return input;
+
+            return char.ToUpper(input[0]) + input.Substring(1);
+        }
+    private void ToggleUserMenu()
+    {
+        isUserMenuOpen = !isUserMenuOpen;
+    }
+
+    private async Task CloseUserMenuDelayed()
+    {
+        // Small delay to allow clicking items inside the dropdown
+        await Task.Delay(200);
+        isUserMenuOpen = false;
+    }
+
+        private List<MessageDto> messages = new();
+
+        // Per-instance in-memory cache (avoid static/shared cache to prevent cross-user PHI leakage)
+        private List<MessageDto>? CachedAllFetched;
+        private List<MessageDto>? CachedMessages;
+        private bool CachedInitialPageReady = false;
+
+        // Pagination state
+        private int pageSize = 20;
+        private int currentPage = 1;
+        private int totalPages = 1;
+
+        // Background loading state
+        private bool initialPageReady = false; // true when first page items are available
+        private bool isBackgroundFilling = false;
+        private List<MessageDto> allFetched = new(); // hold full result from API while we display first page
+
+        private enum FilterType { All, Pending, Approved, Rejected }
+        private FilterType selectedFilter = FilterType.Pending;
+
+        // Date filter mode: Any, Exact, Range
+        private string dateMode = "Any";
+        private string exactDateString = string.Empty; // yyyy-MM-dd
+        private string rangeStartString = string.Empty;
+
+        private string rangeEndString = string.Empty;
+        private string searchText = string.Empty;
+
+        private IEnumerable<MessageDto> filteredMessages => messages.Where(m => FilterByApproval(m) && FilterByDate(m) && FilterBySearch(m));
+
+        private IEnumerable<MessageDto> visibleMessages => filteredMessages.Skip((currentPage - 1) * pageSize).Take(pageSize);
+
+        private MessageDto? selectedMessage;
+        private bool isOverlayOpen = false;
+        private HashSet<int> animatingCards = new();
+
+        // Edit mode state
+        private bool isEditMode = false;
+        private MessageDto editModel = new MessageDto();
+        private string newTag = string.Empty;
+        
+        // Confirmation state
+        private bool showConfirmationModal = false;
+        private MessageDto? messageToConfirm;
+        private string confirmationAction = "Delete"; // "Delete" or "Reject"
+        
+        // Bulk Selection state
+        private HashSet<int> selectedMessageIds = new();
+        // Mobile filters collapsed/expanded state (mobile-only toggle)
+        private bool mobileFiltersExpanded = false;
+
+        // Country List
+        private List<CountryDto> countries = new();
+        private int selectedCountryId = 0;
+
+        protected override async Task OnInitializedAsync()
+        {
+            await AppState.EnsureInitializedAsync();
+            try
+            {
+                // Kick off country loading in parallel
+                var loadCountriesTask = LoadCountries();
+
+                var loadedFromSession = false;
+                // In development disable server-side per-user cache to ensure fresh data on reload
+                if (Env?.IsDevelopment() == true)
+                {
+                    await LoadMessages();
+                }
+                else
+                {
+                    // Try server-side per-user cache first
+                    try
+                    {
+                        var userId = await GetCurrentUserIdAsync();
+                        if (!string.IsNullOrEmpty(userId))
+                        {
+                            var cachedAll = await UserCache.GetAsync<System.Collections.Generic.List<MessageDto>>(userId, "allFetched");
+                            var cachedMsgs = await UserCache.GetAsync<System.Collections.Generic.List<MessageDto>>(userId, "messagesPage");
+                            var cachedReady = await UserCache.GetAsync<bool?>(userId, "initialReady");
+
+                            if (cachedAll != null && cachedMsgs != null && cachedReady == true)
+                            {
+                                allFetched = new System.Collections.Generic.List<MessageDto>(cachedAll);
+                                messages = new System.Collections.Generic.List<MessageDto>(cachedMsgs);
+                                initialPageReady = true;
+                                RecalcTotalPages();
+                                _ = StartBackgroundFill();
+                            }
+                            else
+                            {
+                                await LoadMessages();
+                            }
+                        }
+                        else
+                        {
+                            // fallback: no user id—do a direct load but avoid caching
+                            await LoadMessages();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        await LoadMessages();
+                    }
+                }
+
+                // Ensure countries are loaded
+                await loadCountriesTask;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("OnInitializedAsync error: " + ex.Message);
+            }
+        }
+
+        private async Task LoadCountries()
+        {
+            try
+            {
+                var response = await CommonHttpRequest.MakeRequest<ApiResponse<List<CountryDto>>>(
+                    "GET",
+                    "GetAllCountries"
+                );
+
+                if (response?.Data != null)
+                {
+                    countries = response.Data;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading countries: {ex.Message}");
+            }
+        }
+
+        protected override async Task OnAfterRenderAsync(bool firstRender)
+        {
+            if (firstRender)
+            {
+                await LoadUserName();
+            }
+        }
+        
+
+
+        private async Task LoadUserName()
+        {
+            try
+            {
+                var authState = await AuthProvider.GetAuthenticationStateAsync();
+                var user = authState?.User;
+                if (user?.Identity?.IsAuthenticated == true)
+                {
+                    var name = user.Identity?.Name;
+                    if (!string.IsNullOrEmpty(name)) displayName = name;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("LoadUserName error: " + ex.Message);
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+
+        private async Task LoadMessages()
+        {
+            var response = await CommonHttpRequest.MakeRequest<ApiResponse<List<MessageDto>>>(
+                "GET",
+                "GetAllMessages"
+            );
+
+                if (response?.Data != null)
+            {
+                var data = response.Data;
+
+                // Filter by MuseumId if present
+                if (AppState.MuseumId > 0)
+                {
+                    data = data.Where(m => m.musiumid == AppState.MuseumId).ToList();
+                }
+
+                // sort full set and keep it in allFetched
+                allFetched = data
+                    .OrderBy(m => m.isApproved == true)
+                    .ThenByDescending(m => m.createdDate)
+                    .ToList();
+
+                // take first page synchronously to make UI responsive
+                messages = allFetched.Take(pageSize).ToList();
+                initialPageReady = true;
+
+                // start background fill for remaining items
+                _ = StartBackgroundFill();
+
+                // cache results server-side per user so we don't persist PHI client-side
+                try
+                {
+                    var userId = await GetCurrentUserIdAsync();
+                    if (!Env?.IsDevelopment() == true)
+                    {
+                        if (!string.IsNullOrEmpty(userId))
+                        {
+                            await UserCache.SetAsync(userId, "allFetched", allFetched, TimeSpan.FromMinutes(15));
+                            await UserCache.SetAsync(userId, "messagesPage", messages, TimeSpan.FromMinutes(15));
+                            await UserCache.SetAsync(userId, "initialReady", true, TimeSpan.FromMinutes(15));
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            RecalcTotalPages();
+        }
+
+        private async Task StartBackgroundFill()
+        {
+            if (isBackgroundFilling) return;
+            isBackgroundFilling = true;
+
+            try
+            {
+                // Append remaining items in small batches to avoid UI blocking
+                int index = messages.Count;
+                const int batchSize = 10;
+                while (index < allFetched.Count)
+                {
+                    var batch = allFetched.Skip(index).Take(batchSize).ToList();
+                    if (!batch.Any()) break;
+
+                    // mimic progressive addition
+                    await Task.Delay(80); // slight delay to keep UI smooth
+                    messages.AddRange(batch);
+                    index += batch.Count;
+
+                    // refresh pagination counts
+                    RecalcTotalPages();
+                    // keep server-side cache updated as we progressively fill
+                    try
+                    {
+                        var userId = await GetCurrentUserIdAsync();
+                        if (!Env?.IsDevelopment() == true)
+                        {
+                            if (!string.IsNullOrEmpty(userId))
+                            {
+                                await UserCache.SetAsync(userId, "allFetched", allFetched, TimeSpan.FromMinutes(15));
+                                await UserCache.SetAsync(userId, "messagesPage", messages, TimeSpan.FromMinutes(15));
+                            }
+                        }
+                    }
+                    catch { }
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            finally
+            {
+                isBackgroundFilling = false;
+            }
+        }
+
+        private void RecalcTotalPages()
+        {
+            var count = filteredMessages.Count();
+            totalPages = Math.Max(1, (int)Math.Ceiling(count / (double)pageSize));
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+        }
+
+        private async Task<string> GetCurrentUserIdAsync()
+        {
+            try
+            {
+                var authState = await AuthProvider.GetAuthenticationStateAsync();
+                var user = authState?.User;
+                if (user == null) return string.Empty;
+                var uid = user.FindFirst("UserId")?.Value;
+                if (string.IsNullOrEmpty(uid)) uid = user.Identity?.Name;
+                return uid ?? string.Empty;
+            }
+            catch { return string.Empty; }
+        }
+
+        private void GoToPage(int page)
+        {
+            if (page < 1) page = 1;
+            if (page > totalPages) page = totalPages;
+            currentPage = page;
+        }
+
+        private void PrevPage()
+        {
+            if (currentPage > 1) currentPage--;
+        }
+
+        private void NextPage()
+        {
+            if (currentPage < totalPages) currentPage++;
+        }
+
+        private async Task OnPageSizeChanged(ChangeEventArgs e)
+        {
+            if (int.TryParse(e?.Value?.ToString(), out var newSize) && newSize > 0)
+            {
+                pageSize = newSize;
+                currentPage = 1;
+                RecalcTotalPages();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        // Adapter used by shared Pagination component (accepts int)
+        private Task SetPageSize(int newSize)
+        {
+            if (newSize <= 0) return Task.CompletedTask;
+            pageSize = newSize;
+            currentPage = 1;
+            RecalcTotalPages();
+            return InvokeAsync(StateHasChanged);
+        }
+
+        private void SetFilter(FilterType type)
+        {
+            selectedFilter = type;
+            currentPage = 1;
+            RecalcTotalPages();
+        }
+
+        private int GetCount(FilterType type)
+        {
+            return type switch
+            {
+                FilterType.All => messages.Count,
+                FilterType.Pending => messages.Count(m => m.isApproved == null),
+                FilterType.Approved => messages.Count(m => m.isApproved == true),
+                FilterType.Rejected => messages.Count(m => m.isApproved == false),
+                _ => messages.Count
+            };
+        }
+
+        private void OnDateModeChanged(ChangeEventArgs e)
+        {
+            dateMode = e?.Value?.ToString() ?? "Any";
+            // reset strings when switching modes
+            if (dateMode != "Exact") exactDateString = string.Empty;
+            if (dateMode != "Range") { rangeStartString = string.Empty; rangeEndString = string.Empty; }
+            currentPage = 1;
+            RecalcTotalPages();
+        }
+
+        private void OnDateInputsChanged(ChangeEventArgs e)
+        {
+            // kept for compatibility — recalc
+            currentPage = 1;
+            RecalcTotalPages();
+        }
+
+        private void OnExactDateChanged(ChangeEventArgs e)
+        {
+            exactDateString = e?.Value?.ToString() ?? string.Empty;
+            currentPage = 1;
+            RecalcTotalPages();
+        }
+
+        private void OnRangeStartChanged(ChangeEventArgs e)
+        {
+            rangeStartString = e?.Value?.ToString() ?? string.Empty;
+            currentPage = 1;
+            RecalcTotalPages();
+        }
+
+        private void OnRangeEndChanged(ChangeEventArgs e)
+        {
+            rangeEndString = e?.Value?.ToString() ?? string.Empty;
+            currentPage = 1;
+            RecalcTotalPages();
+        }
+
+        private bool FilterByApproval(MessageDto m)
+        {
+            return selectedFilter switch
+            {
+                FilterType.All => true,
+                FilterType.Pending => m.isApproved == null,
+                FilterType.Approved => m.isApproved == true,
+                FilterType.Rejected => m.isApproved == false,
+                _ => true,
+            };
+        }
+
+        private bool FilterByDate(MessageDto m)
+        {
+            if (dateMode == "Any") return true;
+
+            DateTime created = m.createdDate ?? DateTime.MinValue;
+
+            if (dateMode == "Exact")
+            {
+                if (DateTime.TryParse(exactDateString, out var d))
+                {
+                    return created.Date == d.Date;
+                }
+                return true;
+            }
+
+            if (dateMode == "Range")
+            {
+                var hasStart = DateTime.TryParse(rangeStartString, out var s);
+                var hasEnd = DateTime.TryParse(rangeEndString, out var e);
+                if (hasStart && hasEnd)
+                {
+                    // include entire end day
+                    var endOfDay = e.Date.AddDays(1).AddTicks(-1);
+                    return created >= s.Date && created <= endOfDay;
+                }
+                if (hasStart) return created >= s.Date;
+                if (hasEnd) return created <= e.Date.AddDays(1).AddTicks(-1);
+                return true;
+            }
+
+            return true;
+        }
+
+            private void OnSearchInput(ChangeEventArgs e)
+            {
+                searchText = e?.Value?.ToString() ?? string.Empty;
+                currentPage = 1;
+                RecalcTotalPages();
+            }
+
+            private void ClearSearch()
+            {
+                searchText = string.Empty;
+                currentPage = 1;
+                RecalcTotalPages();
+            }
+
+            private void ClearFilters()
+            {
+                selectedFilter = FilterType.Pending;
+                dateMode = "Any";
+                exactDateString = string.Empty;
+                rangeStartString = string.Empty;
+                rangeEndString = string.Empty;
+                searchText = string.Empty;
+                // Collapse mobile-only filter panel so mobile users see minimized state
+                mobileFiltersExpanded = false;
+                currentPage = 1;
+                RecalcTotalPages();
+                _ = InvokeAsync(StateHasChanged);
+            }
+
+            private bool FilterBySearch(MessageDto m)
+            {
+                if (string.IsNullOrWhiteSpace(searchText)) return true;
+                var s = searchText.Trim();
+                if (!string.IsNullOrEmpty(m.artistName) && m.artistName.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (!string.IsNullOrEmpty(m.messageTitle) && m.messageTitle.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (!string.IsNullOrEmpty(m.messageCreatorName) && m.messageCreatorName.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (!string.IsNullOrEmpty(m.userPhoneNumber) && m.userPhoneNumber.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (!string.IsNullOrEmpty(m.userEmailAddress) && m.userEmailAddress.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                return false;
+            }
+
+            private Task OpenDetail(MessageDto item)
+        {
+            selectedMessage = item;
+            isOverlayOpen = true;
+            isEditMode = false; // Reset edit mode
+            return Task.CompletedTask;
+        }
+
+        private Task CloseDetail()
+        {
+            isOverlayOpen = false;
+            selectedMessage = null;
+            isEditMode = false; // Reset edit mode
+            return Task.CompletedTask;
+        }
+
+        private Task CreateNewMessage()
+        {
+            selectedMessage = new MessageDto
+            {
+                messageId = 0,
+                createdDate = DateTime.Now,
+                musiumName = "Children's Art Gallery", // Default museum for now
+                isApproved = null
+            };
+            isOverlayOpen = true;
+            isEditMode = true;
+            
+            // Re-use edit model initialization logic
+            return EditSelected();
+        }
+
+        private async Task HandleDuplicate(MessageDto item)
+        {
+            if (item == null) return;
+
+            // Create a new entry based on existing artist/user info
+            selectedMessage = new MessageDto
+            {
+                messageId = 0, // Mark as new
+                messageCreatorName = item.messageCreatorName,
+                userEmailAddress = item.userEmailAddress,
+                artistName = item.artistName,
+                artistAge = item.artistAge,
+                musiumName = item.musiumName,
+                musiumid = item.musiumid,
+                countryCode = item.countryCode,
+                userPhoneNumber = item.userPhoneNumber,
+                createdDate = DateTime.Now,
+                isApproved = null,
+                tags = item.tags != null ? new List<string>(item.tags) : new List<string>()
+            };
+
+            isOverlayOpen = true;
+            isEditMode = true;
+
+            // Initialize editModel for the new entry
+            await EditSelected();
+            await InvokeAsync(StateHasChanged);
+        }
+
+            private async Task ShowPrevArtwork()
+            {
+                if (isEditMode) return;
+                if (selectedMessage == null) return;
+                var list = filteredMessages.ToList();
+                var idx = list.FindIndex(m => m.messageId == selectedMessage.messageId);
+                if (idx > 0)
+                {
+                    selectedMessage = list[idx - 1];
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+
+            private async Task ShowNextArtwork()
+            {
+                if (isEditMode) return;
+                if (selectedMessage == null) return;
+                var list = filteredMessages.ToList();
+                var idx = list.FindIndex(m => m.messageId == selectedMessage.messageId);
+                if (idx >= 0 && idx < list.Count - 1)
+                {
+                    selectedMessage = list[idx + 1];
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+
+            private bool HasPrevArtwork
+            {
+                get
+                {
+                    if (selectedMessage == null) return false;
+                    var list = filteredMessages.ToList();
+                    var idx = list.FindIndex(m => m.messageId == selectedMessage.messageId);
+                    return idx > 0;
+                }
+            }
+
+            private bool HasNextArtwork
+            {
+                get
+                {
+                    if (selectedMessage == null) return false;
+                    var list = filteredMessages.ToList();
+                    var idx = list.FindIndex(m => m.messageId == selectedMessage.messageId);
+                    return idx >= 0 && idx < list.Count - 1;
+                }
+            }
+
+        private async Task ApproveSelected()
+        {
+            if (selectedMessage != null)
+            {
+                // Add to animating set
+                animatingCards.Add(selectedMessage.messageId);
+                await InvokeAsync(StateHasChanged);
+                
+                // Wait for animation to complete
+                await Task.Delay(500);
+                
+                var idx = messages.FindIndex(m => m.messageId == selectedMessage.messageId);
+                if (idx >= 0)
+                {
+                    messages[idx].isApproved = true;
+                }
+                
+                // Remove from animating set
+                animatingCards.Remove(selectedMessage.messageId);
+                RecalcTotalPages();
+                UpdateCache();
+            }
+            isOverlayOpen = false;
+            selectedMessage = null;
+        }
+
+        private Task RejectSelected()
+        {
+            if (selectedMessage != null)
+            {
+                // Close drawer first
+                var msg = selectedMessage;
+                isOverlayOpen = false;
+                selectedMessage = null;
+                
+                return QuickReject(msg); // Use centralized method
+            }
+            return Task.CompletedTask;
+        }
+
+        // Edit/Delete handlers for card menu
+        private async Task HandleEdit(MessageDto item)
+        {
+            // Open the detail drawer for this item
+            await OpenDetail(item);
+
+            // Enter edit mode and populate the edit model
+            await EditSelected();
+        }
+
+        private Task HandleDelete(MessageDto item)
+        {
+            messageToConfirm = item;
+            confirmationAction = "Delete";
+            showConfirmationModal = true;
+            return Task.CompletedTask;
+        }
+
+        private async Task ConfirmAction()
+        {
+            if (confirmationAction == "BulkReject")
+            {
+                showConfirmationModal = false;
+                await ExecuteBulkReject();
+                messageToConfirm = null;
+                return;
+            }
+            if (confirmationAction == "Delete")
+            {
+                if (messageToConfirm != null)
+                {
+                    bool success = await CommonHttpRequest.MakeDeleteRequest($"DeleteMessage?MessageId={messageToConfirm.messageId}");
+
+                    if (success)
+                    {
+                        showConfirmationModal = false;
+                        animatingCards.Add(messageToConfirm.messageId);
+                        await InvokeAsync(StateHasChanged);
+                        await Task.Delay(500);
+
+                        var idx = messages.FindIndex(m => m.messageId == messageToConfirm.messageId);
+                        if (idx >= 0) messages.RemoveAt(idx);
+
+                        var idx2 = allFetched.FindIndex(m => m.messageId == messageToConfirm.messageId);
+                        if (idx2 >= 0) allFetched.RemoveAt(idx2);
+
+                        animatingCards.Remove(messageToConfirm.messageId);
+                        RecalcTotalPages();
+                        UpdateCache();
+                        messageToConfirm = null;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Failed to delete message from API");
+                    }
+                }
+
+                return;
+            }
+
+            if (confirmationAction == "Reject")
+            {
+                if (messageToConfirm != null)
+                {
+                    try
+                    {
+                        var item = messageToConfirm;
+                        var body = new
+                        {
+                            MessageId = item.messageId,
+                            MessageAudio = string.IsNullOrEmpty(item.messageAudio) ? null : item.messageAudio,
+                            MessageImage = string.IsNullOrEmpty(item.messageImage) ? null : item.messageImage,
+                            DeviceDetails = item.deviceDetails,
+                            ArtistName = item.artistName,
+                            ArtTitle = item.artTitle,
+                            MessageCreatorName = item.messageCreatorName,
+                            MessageTitle = item.messageTitle,
+                            MusiumName = item.musiumName,
+                            UserEmailAddress = item.userEmailAddress,
+                            CountryCode = item.countryCode,
+                            countryName = item.countryName,
+                            userPhoneNumber = item.userPhoneNumber,
+                            isApproved = false,
+                            userApproved = true,
+                            approvedDateString = DateTime.Now.ToString("MM/dd/yyyy h:mm tt"),
+                            musiumid = item.musiumid
+                        };
+
+                        await CommonHttpRequest.MakeRequest<object>(
+                            "PUT",
+                            "UpdateMusiumMessageOverLoad",
+                            body
+                        );
+
+                        var idx = messages.FindIndex(m => m.messageId == item.messageId);
+                        if (idx >= 0)
+                        {
+                            messages[idx].isApproved = false;
+                            messages[idx].userApproved = true;
+                        }
+
+                        var idx2 = allFetched.FindIndex(m => m.messageId == item.messageId);
+                        if (idx2 >= 0)
+                        {
+                            allFetched[idx2].isApproved = false;
+                            allFetched[idx2].userApproved = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error rejecting message: {ex.Message}");
+                    }
+
+                    showConfirmationModal = false;
+                    messageToConfirm = null;
+                    RecalcTotalPages();
+                    UpdateCache();
+                }
+
+                return;
+            }
+        }
+
+        private void CancelAction()
+        {
+            showConfirmationModal = false;
+            messageToConfirm = null;
+        }
+
+        private async Task QuickApprove(MessageDto item)
+        {
+            // Add to animating set
+            animatingCards.Add(item.messageId);
+            await InvokeAsync(StateHasChanged);
+            
+            // Wait for animation to complete
+            await Task.Delay(500);
+            
+            // API Call logic
+            try
+            {
+                var body = new 
+                {
+                    MessageId = item.messageId,
+                    MessageAudio = string.IsNullOrEmpty(item.messageAudio) ? null : item.messageAudio,
+                    MessageImage = string.IsNullOrEmpty(item.messageImage) ? null : item.messageImage,
+                    DeviceDetails = item.deviceDetails,
+                    ArtistName = item.artistName,
+                    ArtTitle = item.artTitle,
+                    MessageCreatorName = item.messageCreatorName,
+                    MessageTitle = item.messageTitle,
+                    MusiumName = item.musiumName,
+                    UserEmailAddress = item.userEmailAddress,
+                    CountryCode = item.countryCode,
+                    countryName = item.countryName, 
+                    userPhoneNumber = item.userPhoneNumber,
+                    isApproved = true,
+                    userApproved = true,
+                    approvedDateString = DateTime.Now.ToString("MM/dd/yyyy h:mm tt"),
+                    musiumid = item.musiumid
+                };
+
+                await CommonHttpRequest.MakeRequest<object>(
+                    "PUT",
+                    "UpdateMusiumMessageOverLoad",
+                    body
+                );
+
+                // Update local lists
+                var idx = messages.FindIndex(m => m.messageId == item.messageId);
+                if (idx >= 0) 
+                {
+                    messages[idx].isApproved = true;
+                    messages[idx].userApproved = true;
+                }
+
+                var idx2 = allFetched.FindIndex(m => m.messageId == item.messageId);
+                if (idx2 >= 0)
+                {
+                    allFetched[idx2].isApproved = true;
+                    allFetched[idx2].userApproved = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error approving message: {ex.Message}");
+            }
+            
+            // Remove from animating set
+            animatingCards.Remove(item.messageId);
+            RecalcTotalPages();
+            UpdateCache();
+        }
+
+        private Task QuickReject(MessageDto item)
+        {
+            messageToConfirm = item;
+            confirmationAction = "Reject";
+            showConfirmationModal = true;
+            return Task.CompletedTask;
+        }
+
+        // Edit/Delete handlers for drawer header
+        private Task EditSelected()
+        {
+            try
+            {
+                if (selectedMessage == null) return Task.CompletedTask;
+
+                // prepare edit model as a shallow copy
+                editModel = new MessageDto
+                {
+                    messageId = selectedMessage.messageId,
+                    messageTitle = selectedMessage.messageTitle,
+                    messageImage = selectedMessage.messageImage,
+                    messageCreatorName = selectedMessage.messageCreatorName,
+                    messageAudio = selectedMessage.messageAudio,
+                    userEmailAddress = selectedMessage.userEmailAddress,
+                    artTitle = selectedMessage.artTitle,
+                    artistName = selectedMessage.artistName,
+                    artistAge = selectedMessage.artistAge,
+                    createdDate = selectedMessage.createdDate,
+                    updatedDate = selectedMessage.updatedDate,
+                    deviceDetails = selectedMessage.deviceDetails,
+                    musiumName = selectedMessage.musiumName,
+                    isApproved = selectedMessage.isApproved,
+                    approvedDate = selectedMessage.approvedDate,
+                    approvedBy = selectedMessage.approvedBy,
+                    countryCode = selectedMessage.countryCode,
+                    countryName = selectedMessage.countryName,
+                    userPhoneNumber = selectedMessage.userPhoneNumber,
+                    musiumid = selectedMessage.musiumid,
+                    userApproved = selectedMessage.userApproved,
+                    approvedDateString = selectedMessage.approvedDateString,
+                    tags = selectedMessage.tags != null ? new List<string>(selectedMessage.tags) : new List<string>()
+                };
+
+                // Attempt to match country by code or name to set initial dropdown state
+                if (!string.IsNullOrEmpty(editModel.countryCode) && countries != null)
+                {
+                    var matching = countries.FirstOrDefault(c => c.countrySMSId == editModel.countryCode);
+                    if (matching != null) selectedCountryId = matching.countryId;
+                    else selectedCountryId = 0;
+                }
+                else
+                {
+                    selectedCountryId = 0; 
+                }
+
+                isEditMode = true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in EditSelected: {ex.Message}");
+            }
+            return Task.CompletedTask;
+        }
+
+        private Task CancelEdit()
+        {
+            if (selectedMessage != null && selectedMessage.messageId == 0)
+            {
+                // If we are creating a new message, cancelling means closing the drawer entirely
+                return CloseDetail();
+            }
+            
+            isEditMode = false;
+            // Otherwise, we are editing an existing value — stay on details view
+            return Task.CompletedTask;
+        }
+
+        private void OnCountryChanged(ChangeEventArgs e)
+        {
+            if (int.TryParse(e.Value?.ToString(), out int id))
+            {
+                selectedCountryId = id;
+                var c = countries.FirstOrDefault(x => x.countryId == id);
+                if (c != null)
+                {
+                    editModel.countryCode = c.countrySMSId;
+                    editModel.countryName = c.countryName;
+                }
+            }
+        }
+
+        private async Task SaveEdit()
+        {
+            // apply edited values to selected message and lists
+            if (editModel == null) return;
+
+            bool isSuccess = false;
+
+            if (editModel.messageId == 0)
+            {
+                // Create logic
+                try
+                {
+                    // Fetch MusiumId 
+                    int musiumId = AppState.MuseumId;
+
+                    // Construct body for Create
+                    var body = new 
+                    {
+                        MessageAudio = string.IsNullOrEmpty(editModel.messageAudio) ? null : editModel.messageAudio,
+                        MessageImage = string.IsNullOrEmpty(editModel.messageImage) ? null : editModel.messageImage,
+                        DeviceDetails = editModel.deviceDetails ?? "Web Admin",
+                        ArtistName = string.IsNullOrEmpty(editModel.artistName) ? "Unknown Artist" : editModel.artistName,
+                        ArtTitle = string.IsNullOrEmpty(editModel.artTitle) ? "Untitled" : editModel.artTitle,
+                        MessageCreatorName = editModel.messageCreatorName,
+                        MessageTitle = editModel.messageTitle,
+                        MusiumName = editModel.musiumName, // Might need to be set from admin context if not in editModel
+                        UserEmailAddress = editModel.userEmailAddress,
+                        musiumid = musiumId,
+                        UserApproved = true, // Auto-approve as per snippet (or context)
+                        CountryCode = !string.IsNullOrEmpty(editModel.countryCode) ? editModel.countryCode : "",
+                        countryName = !string.IsNullOrEmpty(editModel.countryName) ? editModel.countryName : ""
+                    };
+
+                    // Call API - Note: User snippet used "AddMusiumMessageForWeb"
+                    await CommonHttpRequest.MakeRequest<object>(
+                        "POST", 
+                        "AddMusiumMessageForWeb", 
+                        body
+                    );
+                    
+                    // Assign a temporary ID for local state (decrementing from -1) so it shows up until refresh
+                    // In a real app we'd want the ID back from the API result "MusiumObjectResult"
+                    var nextId = allFetched.Any() ? allFetched.Min(m => m.messageId) : 0;
+                    editModel.messageId = nextId <= 0 ? nextId - 1 : -1;
+                    
+                    messages.Insert(0, editModel);
+                    allFetched.Insert(0, editModel);
+                    selectedMessage = editModel;
+                    isSuccess = true; 
+                    
+                }
+                catch (Exception ex)
+                {
+                     Console.WriteLine($"Error creating message: {ex.Message}");
+                     // Ideally show toast
+                }
+            }
+            else
+            {
+                // Update logic
+                try 
+                {
+                    // Construct the payload as per user guidance
+                    // Note: Using the properties from the guidance, assuming API expects PascalCase
+                    var body = new 
+                    {
+                        MessageId = editModel.messageId,
+                        MessageAudio = string.IsNullOrEmpty(editModel.messageAudio) ? null : editModel.messageAudio,
+                        MessageImage = string.IsNullOrEmpty(editModel.messageImage) ? null : editModel.messageImage,
+                        DeviceDetails = editModel.deviceDetails,
+                        ArtistName = editModel.artistName,
+                        ArtTitle = editModel.artTitle,
+                        MessageCreatorName = editModel.messageCreatorName,
+                        MessageTitle = editModel.messageTitle,
+                        MusiumName = editModel.musiumName,
+                        UserEmailAddress = editModel.userEmailAddress,
+                        CountryCode = editModel.countryCode,
+                        countryName = editModel.countryName, // Mixed case as per user snippet
+                        userPhoneNumber = editModel.userPhoneNumber // Mixed case as per user snippet
+                    };  
+
+                    // Clean up country name if needed (per user snippet logic)
+                    // if (!string.IsNullOrEmpty(editModel.countryName) && editModel.countryName.Contains("Country")) 
+                    // {
+                    //      // logic from snippet... 
+                    // }
+
+                    // Call API
+                    // We use object/dynamic because we don't have the explicit MusiumObjectResult class
+                    // and CommonHttpRequest now supports generic object body
+                    await CommonHttpRequest.MakeRequest<object>(
+                        "PUT",
+                        "UpdateMusiumMessageOverLoad",
+                        body
+                    );
+
+                    // Update local lists
+                    var idx = messages.FindIndex(m => m.messageId == editModel.messageId);
+                    if (idx >= 0) messages[idx] = editModel;
+
+                    var idx2 = allFetched.FindIndex(m => m.messageId == editModel.messageId);
+                    if (idx2 >= 0) allFetched[idx2] = editModel;
+
+                    // if the drawer currently shows this message, update it
+                    if (selectedMessage != null && selectedMessage.messageId == editModel.messageId)
+                    {
+                        selectedMessage = editModel;
+                    }
+                    
+                    isSuccess = true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error saving edit: {ex.Message}");
+                    // Ideally show a toast notification here
+                }
+            }
+
+            if (isSuccess)
+            {
+                isEditMode = false;
+                RecalcTotalPages();
+                await InvokeAsync(StateHasChanged);
+                UpdateCache();
+            }
+        }
+
+        private async Task OnImageFileChanged(InputFileChangeEventArgs e)
+        {
+            var file = e.File;
+            if (file == null) return;
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(10_000_000).CopyToAsync(ms);
+            var base64 = Convert.ToBase64String(ms.ToArray());
+            editModel.messageImage = $"Data:{file.ContentType};base64,{base64}";
+            await InvokeAsync(StateHasChanged);
+        }
+
+        private async Task OnAudioFileChanged(InputFileChangeEventArgs e)
+        {
+            var file = e.File;
+            if (file == null) return;
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(20_000_000).CopyToAsync(ms);
+            var base64 = Convert.ToBase64String(ms.ToArray());
+            editModel.messageAudio = $"Data:{file.ContentType};base64,{base64}";
+            await InvokeAsync(StateHasChanged);
+        }
+
+        private void AddTag()
+        {
+            var t = (newTag ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(t)) return;
+            if (editModel.tags == null) editModel.tags = new List<string>();
+            if (!editModel.tags.Contains(t, StringComparer.OrdinalIgnoreCase)) editModel.tags.Add(t);
+            newTag = string.Empty;
+        }
+
+        private void RemoveTag(string tag)
+        {
+            if (editModel.tags == null) return;
+            editModel.tags.Remove(tag);
+        }
+
+        private void HandleTagKeyUp(KeyboardEventArgs e)
+        {
+            if (e.Key == "Enter")
+            {
+                AddTag();
+            }
+        }
+
+        private async Task Logout()
+        {
+            try
+            {
+                NavigationManager.NavigateTo("/account/logout", true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Logout error: " + ex.Message);
+            }
+
+            // Clear local UI/session state
+            messages.Clear();
+            allFetched.Clear();
+            selectedMessage = null;
+            selectedMessageIds.Clear();
+            isOverlayOpen = false;
+            isEditMode = false;
+
+            // Clear server-side per-user cache so next login will reload fresh
+            try
+            {
+                var userId = await GetCurrentUserIdAsync();
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    await UserCache.RemoveAsync(userId, "allFetched");
+                    await UserCache.RemoveAsync(userId, "messagesPage");
+                    await UserCache.RemoveAsync(userId, "initialReady");
+                }
+            }
+            catch { }
+
+            // Redirect to login page (force reload)
+            NavigationManager.NavigateTo("/login", true);
+        }
+
+        private Task DeleteSelected()
+        {
+            // TODO: Implement delete confirmation
+            // Trigger confirmation from drawer as well
+            if (selectedMessage != null)
+            {
+                // Close drawer first for cleaner UX
+                var msg = selectedMessage;
+                isOverlayOpen = false;
+                selectedMessage = null;
+                
+                return HandleDelete(msg);
+            }
+            return Task.CompletedTask;
+        }
+
+        // Bulk Actions Logic
+        private void ToggleSelection(int id, bool selected)
+        {
+            if (selected)
+            {
+                selectedMessageIds.Add(id);
+            }
+            else
+            {
+                selectedMessageIds.Remove(id);
+            }
+        }
+
+        private async Task BulkApprove()
+        {
+            foreach (var id in selectedMessageIds) animatingCards.Add(id);
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(500);
+
+            foreach (var id in selectedMessageIds)
+            {
+                var idx = messages.FindIndex(m => m.messageId == id);
+                if (idx >= 0) messages[idx].isApproved = true;
+            }
+
+            foreach (var id in selectedMessageIds) animatingCards.Remove(id);
+            selectedMessageIds.Clear();
+            RecalcTotalPages();
+            UpdateCache();
+        }
+
+        private Task BulkReject()
+        {
+            // Instead of executing immediately, show confirmation
+            if (selectedMessageIds.Count == 0) return Task.CompletedTask;
+
+            confirmationAction = "BulkReject";
+            showConfirmationModal = true;
+            return Task.CompletedTask;
+        }
+
+        private async Task ExecuteBulkReject()
+        {
+            foreach (var id in selectedMessageIds) animatingCards.Add(id);
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(500);
+
+            foreach (var id in selectedMessageIds)
+            {
+                var idx = messages.FindIndex(m => m.messageId == id);
+                if (idx >= 0) messages[idx].isApproved = false;
+            }
+
+            foreach (var id in selectedMessageIds) animatingCards.Remove(id);
+            selectedMessageIds.Clear();
+            RecalcTotalPages();
+            UpdateCache();
+        }
+
+        private void SelectAll()
+        {
+            var targetIds = filteredMessages.Select(m => m.messageId).ToList();
+            foreach (var id in targetIds)
+            {
+                selectedMessageIds.Add(id);
+            }
+        }
+
+        private void ClearSelection()
+        {
+            selectedMessageIds.Clear();
+        }
+        private string Capitalize(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            return char.ToUpper(value[0]) + value[1..];
+        }
+
+        private async Task ToggleMobileSidebar()
+        {
+            await JS.InvokeVoidAsync("toggleMobileSidebar");
+        }
+
+        private void ToggleFiltersMobile()
+        {
+            mobileFiltersExpanded = !mobileFiltersExpanded;
+        }
+
+        private async Task CloseMobileSidebar()
+        {
+            await JS.InvokeVoidAsync("closeMobileSidebar");
+        }
+
+        private void HandleFabClick()
+        {
+            // Trigger the same action as the "Add User/Content" button
+            // You can add your actual functionality here
+            // For now, this is a placeholder
+        }
+
+        private void UpdateCache()
+        {
+            // Fire-and-forget update to server-side per-user cache so UI callers stay synchronous
+            try
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Don't update server-side cache when running in development
+                        if (Env?.IsDevelopment() == true) return;
+                        var userId = await GetCurrentUserIdAsync();
+                        if (string.IsNullOrEmpty(userId)) return;
+                        await UserCache.SetAsync(userId, "allFetched", allFetched, TimeSpan.FromMinutes(15));
+                        await UserCache.SetAsync(userId, "messagesPage", messages, TimeSpan.FromMinutes(15));
+                        await UserCache.SetAsync(userId, "initialReady", initialPageReady, TimeSpan.FromMinutes(15));
+                    }
+                    catch { }
+                });
+            }
+            catch { }
+        }
+
+    }

@@ -1,0 +1,642 @@
+/* ==========================================================================
+   ADMIN CARD STYLES - Modern UI Uplift
+   ========================================================================== */
+
+:root {
+    --card-bg: #ffffff;
+    --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --card-shadow-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    --card-border: 1px solid #f1f5f9;
+    --primary: #6366f1;
+    /* Indigo 500 */
+    --primary-hover: #4f46e5;
+    /* Indigo 600 */
+    --text-main: #0f172a;
+    /* Slate 900 */
+    --text-muted: #64748b;
+    /* Slate 500 */
+    --status-pending-bg: #fff7ed;
+    /* Orange 50 */
+    --status-pending-text: #c2410c;
+    /* Orange 700 */
+    --status-pending-border: 1px solid #ffedd5;
+    --status-approved-bg: #f0fdf4;
+    /* Green 50 */
+    --status-approved-text: #15803d;
+    /* Green 700 */
+    --status-approved-border: 1px solid #dcfce7;
+    --transition-base: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Grid Layout */
+.card-grid {
+    display: grid;
+    /* Let the grid automatically fit as many cards as will comfortably
+       fit the available width. Cards will be at least 220px wide and
+       expand to fill remaining space. */
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+    padding: 16px 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card swipe-up animation when approved/rejected */
+@keyframes swipeUpAndVanish {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        max-height: 500px;
+        margin-bottom: 24px;
+    }
+
+    40% {
+        opacity: 0.6;
+        transform: translateY(-30px) scale(0.97);
+    }
+
+    70% {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.94);
+        max-height: 500px;
+        margin-bottom: 24px;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-60px) scale(0.92);
+        max-height: 0;
+        margin-bottom: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+}
+
+/* Card Container */
+.admin-card {
+    background: var(--card-bg);
+    border: var(--card-border);
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: var(--card-shadow);
+    transition: var(--transition-base);
+    display: flex;
+    flex-direction: column;
+    max-width: 400px;
+    /* Prevent excessive stretching */
+    width: 100%;
+    /* fill the column up to max-width */
+}
+
+/* Apply animation to cards being removed */
+.admin-card.animating-out {
+    animation: swipeUpAndVanish 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+    pointer-events: none !important;
+    transform: none !important;
+}
+
+/* Hover effect - but not when animating */
+.admin-card:hover:not(.animating-out) {
+    transform: translateY(-4px);
+    box-shadow: var(--card-shadow-hover);
+    border-color: #e2e8f0;
+}
+
+/* Selection Checkbox */
+.card-selection {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 20;
+}
+
+/* Modern Checkbox Style */
+.card-select {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    /* Slate 200 */
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-base);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card-select:hover {
+    border-color: var(--primary);
+    transform: scale(1.05);
+}
+
+.card-select:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.card-select:checked::after {
+    content: '';
+    width: 10px;
+    height: 6px;
+    border-left: 2px solid white;
+    border-bottom: 2px solid white;
+    transform: rotate(-45deg) translate(1px, -1px);
+}
+
+/* Status Badge */
+.status-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 20;
+    padding: 4px 12px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    backdrop-filter: blur(8px);
+}
+
+.status-badge.pending {
+    background: var(--status-pending-bg);
+    color: var(--status-pending-text);
+    border: var(--status-pending-border);
+}
+
+.status-badge.approved {
+    background: var(--status-approved-bg);
+    color: var(--status-approved-text);
+    border: var(--status-approved-border);
+}
+
+/* Image Area */
+.card-image {
+    height: 240px;
+    background: #f8fafc;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+
+.admin-card:hover .card-image img {
+    transform: scale(1.05);
+}
+
+/* Image Placeholder */
+.image-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: #94a3b8;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.image-placeholder svg {
+    opacity: 0.5;
+    transition: var(--transition-base);
+}
+
+.admin-card:hover .image-placeholder svg {
+    transform: scale(1.1);
+    opacity: 0.8;
+}
+
+/* Content Area */
+.card-body {
+    padding: 20px;
+    flex-grow: 1;
+}
+
+.creator-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin: 0 0 8px 0;
+    line-height: 1.2;
+}
+
+.card-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.artist-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.artist-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.card-date {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.date-icon {
+    opacity: 0.7;
+}
+
+/* Quick Actions */
+.card-quick-actions {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 30;
+    pointer-events: none;
+    /* Prevent blocking clicks when invisible */
+}
+
+.admin-card:hover .card-quick-actions {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.quick-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    color: #94a3b8;
+}
+
+.quick-action-btn:hover {
+    background: #f1f5f9;
+    transform: scale(1.1);
+}
+
+.quick-action-btn.approve:hover {
+    color: #16a34a;
+    /* Green 600 */
+    background: #dcfce7;
+    /* Green 100 */
+}
+
+.quick-action-btn.reject:hover {
+    color: #dc2626;
+    /* Red 600 */
+    background: #fee2e2;
+    /* Red 100 */
+}
+
+/* Mobile: Always show quick action buttons with proper touch targets */
+@media (max-width: 768px) {
+    .card-quick-actions {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+        /* Add subtle background for better visibility on mobile */
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        padding: 4px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        gap: 16px;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+    }
+
+    .quick-action-btn {
+        /* Industry standard: minimum 44x44px touch target for mobile */
+        width: auto;
+        flex: 1;
+        height: 44px;
+        border-radius: 10px;
+        /* Add background for better visibility */
+        background: rgba(248, 250, 252, 0.9);
+        /* Improve color contrast */
+        color: #64748b;
+        /* Add border for better definition */
+        border: 1px solid rgba(226, 232, 240, 0.8);
+    }
+
+    .quick-action-btn:active {
+        transform: scale(0.95);
+        background: #f1f5f9;
+    }
+
+    /* Color-coded buttons on mobile for better UX */
+    .quick-action-btn.approve {
+        color: #16a34a;
+        background: rgba(220, 252, 231, 0.9);
+        border-color: rgba(34, 197, 94, 0.2);
+    }
+
+    .quick-action-btn.approve:active {
+        background: #dcfce7;
+        transform: scale(0.95);
+    }
+
+    .quick-action-btn.reject {
+        color: #dc2626;
+        background: rgba(254, 226, 226, 0.9);
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .quick-action-btn.reject:active {
+        background: #fee2e2;
+        transform: scale(0.95);
+    }
+
+    /* Ensure icons are properly sized for larger buttons */
+    .quick-action-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .card-body {
+        /* Add extra padding at bottom to push the bottom edge (and thus the absolute positioned quick actions) away from the content */
+        padding-bottom: 70px;
+    }
+}
+
+/* Tablet: Show on hover but with larger touch targets */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .quick-action-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .quick-action-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* ==========================================================================
+   THREE-DOT MENU - Card Actions
+   ========================================================================== */
+
+.card-body-content {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.card-body-content>div:first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.card-menu-wrapper {
+    position: relative;
+    flex-shrink: 0;
+    margin-top: -2px;
+}
+
+.card-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    color: #94a3b8;
+}
+
+.card-menu-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.card-menu-btn:hover {
+    background: #f1f5f9;
+    color: #2563eb;
+    transform: scale(1.05);
+}
+
+.card-menu-btn:active {
+    transform: scale(0.95);
+}
+
+.card-menu-dropdown {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    min-width: 160px;
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.08);
+    padding: 6px;
+    z-index: 100;
+    transform-origin: bottom right;
+    animation: menuSlideUp 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes menuSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #1e293b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.menu-item svg {
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.menu-item.edit:hover {
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+}
+
+.menu-item.edit:hover svg {
+    color: #2563eb;
+    transform: scale(1.1);
+}
+
+.menu-item.delete:hover {
+    background: rgba(220, 38, 38, 0.08);
+    color: #dc2626;
+}
+
+.menu-item.delete:hover svg {
+    color: #dc2626;
+    transform: scale(1.1);
+}
+
+.menu-item:active {
+    transform: scale(0.98);
+}
+
+/* Search filter trash button (placed beside search input) */
+.modern-search-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modern-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    /* allow shrinking in flex */
+    height: 40px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid #e6eef6;
+    background: white;
+    transition: all 0.16s ease;
+    font-size: 14px;
+    color: var(--text-main);
+}
+
+.filter-trash-btn,
+.clear-search-btn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #94a3b8;
+    transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+
+.filter-trash-btn:hover {
+    background: #fff1f2;
+    /* light red */
+    color: #dc2626;
+    transform: translateY(-1px);
+}
+
+.filter-trash-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* When both trash and clear buttons present, keep spacing consistent */
+.modern-search-wrapper .clear-search-btn:hover {
+    background: #f1f5f9;
+    color: #111827;
+}
+
+@media (max-width: 640px) {
+    .modern-search-input {
+        height: 44px;
+    }
+
+    .filter-trash-btn,
+    .clear-search-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 9px;
+    }
+}
+
+/* Pagination - for completeness if used in same file */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin: 48px 0;
+}
+
+.pagination button {
+    height: 40px;
+    padding: 0 20px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    color: var(--text-main);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition-base);
+}
+
+.pagination button:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    color: var(--primary);
+}
+
+.pagination button.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

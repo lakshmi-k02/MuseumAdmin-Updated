@@ -1,0 +1,110 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Routing
+@using MuseumAdmin.Components.Layout
+@using MuseumAdmin.Components.Shared
+@using MuseumAdmin.Components.Pages
+@inject MuseumAdmin.Services.AppState AppState
+@inject NavigationManager NavigationManager
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(Program).Assembly">
+        <Found Context="routeData">
+            @if (!isInitialized)
+            {
+                <LayoutView Layout="@typeof(MainLayout)">
+                    <div class="global-init-state">
+                        <div class="spinner-small"></div>
+                        <p>Verifying access...</p>
+                    </div>
+                </LayoutView>
+            }
+            else
+            {
+                {
+                    var fullPath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+                    var cleanedPath = fullPath.Contains('?') ? fullPath.Split('?')[0] : fullPath;
+                    var path = cleanedPath.Trim('/').ToLower();
+                    
+                    var isLandingPage = string.IsNullOrEmpty(path) || path == "home";
+
+                    if (AppState.IsAuthorizedForPath(fullPath))
+                    {
+                        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                            <NotAuthorized>
+                                <NavigationRedirect Dest="/login" />
+                            </NotAuthorized>
+                        </AuthorizeRouteView>
+                    }
+                    else if (AppState.Role == "Therapist" && isLandingPage)
+                    {
+                        <LayoutView Layout="@typeof(MainLayout)">
+                            <div class="redirect-state">
+                                <div class="spinner-small"></div>
+                                <p>Redirecting to your dashboard...</p>
+                            </div>
+                        </LayoutView>
+                        <NavigationRedirect Dest="/programs" />
+                    }
+                    else
+                    {
+                        <LayoutView Layout="@typeof(MainLayout)">
+                            <NotAuthorizedView />
+                        </LayoutView>
+                    }
+                }
+            }
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <NotFoundOrUnderConstruction />
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
+
+<style>
+    .global-init-state, .redirect-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 40vh;
+        gap: 16px;
+        color: #64748b;
+        font-weight: 500;
+    }
+
+    .spinner-small {
+        width: 32px;
+        height: 32px;
+        border: 3px solid #f1f5f9;
+        border-top: 3px solid #0f172a;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @@keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthStateTask { get; set; }
+
+    private bool isInitialized = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthStateTask != null)
+        {
+            await AppState.EnsureInitializedAsync();
+            isInitialized = true;
+        }
+    }
+}
+
+
+

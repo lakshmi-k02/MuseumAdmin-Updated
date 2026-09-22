@@ -1,0 +1,820 @@
+@page "/create-exhibit"
+@page "/create-exhibit/{ExhibitId:int}"
+@page "/edit-exhibit/{ExhibitId:int}"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize]
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+@* Disabled in development: server-side per-user caching may block fresh reloads.
+    Re-enable in production if you want per-user server-side caching. *@
+@* @inject MuseumAdmin.Services.IUserCacheService UserCache *@
+@using Microsoft.AspNetCore.Components.Forms
+@using System.IO
+@using MuseumAdmin.Models.Exhibits
+@using MuseumAdmin.Services
+@inject ExhibitService ExhibitService
+@inject MuseumAdmin.Services.AppState AppState
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using MuseumAdmin.Components.Shared
+@using MuseumAdmin.Models
+@using MuseumAdmin.Utils
+
+
+<!-- Main Content Area Wrapper -->
+<div class="fade-in">
+    <TopBar Title="@pageTitle" 
+            ButtonText="" 
+            OnButtonClick="HandleAddContent"
+            OnMobileMenuToggle="ToggleMobileSidebar" />
+
+    <div class="content-container">
+        <!-- Minimal Stepper -->
+        <div class="stepper-row">
+            @for (int i = 0; i < steps.Count; i++)
+            {
+                var index = i;
+                var step = steps[index];
+                bool isActive = currentStep == index;
+                bool isCompleted = currentStep > index;
+                
+                <div class="step-node-wrapper">
+                    <button type="button" @onclick="() => GoToStep(index)" 
+                            class="@GetStepNodeClass(index)">
+                        <div class="step-circle">
+                            @if (isCompleted)
+                            {
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            }
+                            else
+                            {
+                                <span>@(index + 1)</span>
+                            }
+                        </div>
+                        <div class="text-center">
+                            <div class="step-title">@step.Title</div>
+                            <div class="step-subtitle">@step.Subtitle</div>
+                        </div>
+                    </button>
+                </div>
+
+                @if (index < steps.Count - 1)
+                {
+                    <div class="step-connector @(currentStep > index ? "is-active" : "")"></div>
+                }
+            }
+        </div>
+
+    <!-- Main Content Card -->
+    <div class="card">
+        <div class="card-body">
+            
+            @if (currentStep == 0)
+            {
+                <!-- Step 1: Exhibition Details -->
+                <div class="form-section fade-in">
+                    <div class="mb-10">
+                        <h2>Exhibition Details</h2>
+                        <p>Fill in the core information about your new exhibition including name, themes, and location.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        <div class="col-span-2">
+                            <label class="form-label">Exhibit Name *</label>
+                            <input type="text" 
+                                   @bind="formData.ExhibitName"
+                                   placeholder="Enter Exhibit Name"
+                                   class="form-input" />
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="form-label">Ideal Ages</label>
+                            <input type="text" 
+                                   @bind="formData.IdealAges"
+                                   placeholder="Enter Ideal Ages"
+                                   class="form-input" />
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="form-label">Tags of Key Themes</label>
+                            <div class="tag-input-group">
+                                <input class="form-control" placeholder="Add a tag..." @bind="newTag" @bind:event="oninput" @onkeyup="HandleTagKeyUp" />
+
+                                @* Show tick & cross while typing; otherwise show add button *@
+                                @if (!string.IsNullOrWhiteSpace(newTag))
+                                {
+                                    <button class="btn-icon-only" title="Confirm tag" @onclick="AddTag">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    </button>
+                                    <button class="btn-icon-only" title="Clear" @onclick="ClearNewTag">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                    </button>
+                                }
+                                 @*else
+                                {
+                                    <button class="btn-icon-only" @onclick="AddTag" title="Add Tag">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                                        </svg>
+                                    </button>
+                                } *@
+                            </div>
+                            <div class="tags-container">
+                                @foreach (var t in tags)
+                                {
+                                    <div class="tag-pill">
+                                        <span>@t</span>
+                                        <button class="tag-remove-btn" @onclick="(() => RemoveTag(t))" title="Remove tag">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col md:flex-row gap-6 col-span-2">
+                            <div class="flex-1">
+                                <label class="form-label">Traveling</label>
+                                <select @bind="formData.Traveling" class="form-select">
+                                    <option value="">Select</option>
+                                    <option value="yes">Yes</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+                            <div class="flex-1">
+                                <label class="form-label">Location</label>
+                                <select @bind="formData.Location" class="form-select">
+                                    <option value="">Select Location</option>
+                                    <option value="gallery-a">Art Room</option>
+                                        <!-- <option value="museum-b">City Children's Museum</option>
+                                        <option value="north-wing">North Wing Space</option> -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="form-label">Brief Description</label>
+                            <textarea @bind="formData.Description"
+                                      placeholder="Enter Brief Description"
+                                      rows="5"
+                                      class="form-input resize-none"></textarea>
+                        </div>
+                        @if (IsEdit)
+                        {
+                            <div class="col-span-2">
+                                <label class="form-label">Broadcast Message</label>
+                                <textarea @bind="broadcastMessage"
+                                          placeholder="Describe the changes to broadcast to members"
+                                          rows="4"
+                                          class="form-input resize-none"></textarea>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (currentStep == 1)
+            {
+                <!-- Step 2: Select Artwork -->
+                <div class="form-section fade-in">
+                    <div class="mb-10">
+                        <h2>Select Artwork</h2>
+                        <p>Browse and select art pieces from approved submissions to feature in this exhibition.</p>
+                    </div>
+
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                        <div class="flex items-center gap-3">
+                            <span class="text-[11px] font-bold uppercase tracking-tight text-gray-400">Filter By:</span>
+                            <div class="flex gap-2">
+                                <button type='button' class='filter-tab @(artworkFilter == "approved" ? "active" : "") text-[11px] px-4 py-1.5' @onclick='() => SetArtworkFilter("approved")'>Approved</button>
+                                <button type='button' class='filter-tab @(artworkFilter == "members" ? "active" : "") text-[11px] px-4 py-1.5' @onclick='() => SetArtworkFilter("members")'>Members</button>
+                            </div>
+                        </div>
+                        <div class="filter-search md:w-72">
+                            <div class="modern-search-wrapper">
+                                <svg class="search-icon-left" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="11" cy="11" r="7"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input type="text" 
+                                       @bind="searchQuery"
+                                       @bind:event="oninput"
+                                       placeholder="Search artists or titles..."
+                                       class="modern-search-input text-sm" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-container border border-gray-100 rounded-lg overflow-hidden">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                        <th class="checkbox-col">
+                                    <input type="checkbox" @bind="SelectAll" />
+                                </th>
+
+                                    <th>Artwork</th>
+                                    <th>Artist Details</th>
+                                    <th class="text-center">Status</th>
+                                    <th>Date Submitted</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                @foreach (var artwork in PagedArtworks)
+                                {
+                                    <tr class="@(artwork.IsSelected ? "row-selected" : "") transition-colors">
+                                        <td class="checkbox-col">
+                                            <input type="checkbox" @bind="artwork.IsSelected" />
+                                        </td>
+
+                                        <td>
+                                            <div class="flex items-center gap-4">
+                                                
+                                                @if (!string.IsNullOrWhiteSpace(artwork.ImageUrl))
+                                                    {
+                                                        <img src="@artwork.ImageUrl"
+                                                            alt="Artwork image"
+                                                            class="artwork-thumbnail" />
+                                                    }
+                                                    else
+                                                    {
+                                                    <div class="w-12 h-12 rounded @artwork.ThumbnailColor shadow-inner flex-shrink-0"></div>
+                                                    }
+
+                                                <div>
+                                                    <div class="font-bold text-gray-900">@artwork.Title</div>
+                                                    <div class="text-[11px] text-gray-400 font-medium">Ref: EX-@artwork.Title.Substring(0, Math.Min(3, artwork.Title.Length)).ToUpper()</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="text-sm font-semibold text-gray-700">@artwork.ArtistName</div>
+                                            <div class="text-[11px] text-blue-500 font-bold uppercase">@artwork.MemberStatus</div>
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="status-badge approved">@artwork.Approval</span>
+                                        </td>
+                                        <td>
+                                            <div class="text-xs font-semibold text-gray-500">@DateTime.Parse(artwork.DateSubmitted).ToString("MMM dd, yyyy")</div>
+                                            <div class="text-[10px] text-gray-400">@DateTime.Parse(artwork.DateSubmitted).ToString("hh:mm tt")</div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="pagination-container border-0 px-0 flex justify-center">
+                        <div class="inline-block">
+                            <Pagination TotalCount="FilteredArtworks.Count()" PageSize="@pageSize" CurrentPage="@currentPage"
+                                        OnPageChanged="ChangePage" OnPageSizeChanged="SetPageSize" />
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (currentStep == 2)
+            {
+                <!-- Step 3: Slides & Arrangement -->
+                <div class="form-section fade-in">
+                    <div class="mb-10">
+                        <h2>Slides & Arrangement</h2>
+                        <p>Configure the exhibition flow by adding opening, mid-reminder, and closing slides.</p>
+                    </div>
+
+                    <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-8 flex items-start gap-3">
+                        <svg class="w-5 h-5 text-blue-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p class="text-xs text-blue-700 font-medium leading-relaxed">
+                            <span class="font-bold">Image Recommendation:</span> Use a 1:2 aspect ratio (900x1800px) for optimal display on gallery devices.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-8">
+                        <!-- Each slide card -->
+                        @foreach (var slide in new[] { 
+                            (ID: "opening", Title: "Opening Slide", Hint: "Welcomes visitors to the exhibition"),
+                            (ID: "reminder", Title: "Mid-Reminder Slide", Hint: "Engagement prompt during the viewing"),
+                            (ID: "closing", Title: "Closing Slide", Hint: "Final message and credits")
+                        })
+                        {
+                            <div class="slide-card-modern group hover:border-blue-200 transition-all">
+                                <div class="flex flex-col md:flex-row gap-6 p-6">
+                                    <div class="md:w-1/3">
+                                        <h3 class="text-lg font-bold text-gray-900 mb-1">@slide.Title</h3>
+                                        <p class="text-xs text-gray-400 font-medium">@slide.Hint</p>
+                                        
+                                        <div class="mt-6">
+                                            <button class="w-full py-2 px-4 bg-white border border-gray-200 text-gray-700 text-xs font-bold uppercase tracking-wider rounded-lg hover:border-blue-500 hover:text-blue-600 transition-all flex items-center justify-center gap-2">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                                </svg>
+                                                Select Message
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="md:w-2/3 flex flex-col gap-4">
+                                        <div>
+                                            <label class="form-label !mb-1 text-[10px]">Slide Text Content</label>
+                                            @if (slide.ID == "opening") { <input type="text" @bind="formData.OpeningSlide" placeholder="Enter content..." class="form-input text-sm" /> }
+                                            @if (slide.ID == "reminder") { <input type="text" @bind="formData.ReminderSlide" placeholder="Enter content..." class="form-input text-sm" /> }
+                                            @if (slide.ID == "closing") { <input type="text" @bind="formData.ClosingSlide" placeholder="Enter content..." class="form-input text-sm" /> }
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="form-label-modern !mb-1 text-[10px]">Backdrop Media</label>
+                                            <div class="upload-dropzone-modern group-hover:bg-blue-50/30 transition-colors">
+                                                <input type="file" class="hidden" id="@(slide.ID)File" />
+                                                <label for="@(slide.ID)File" class="flex flex-col items-center cursor-pointer py-4">
+                                                    <div class="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center mb-2 group-hover:bg-blue-100 group-hover:text-blue-600 transition-all">
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                                        </svg>
+                                                    </div>
+                                                    <span class="text-[11px] font-bold text-gray-500 group-hover:text-blue-600">UPLOAD IMAGE</span>
+                                                    <span class="text-[9px] text-gray-400 mt-1 uppercase font-bold tracking-tighter">JPG, PNG up to 10MB</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="form-navigation" style="border-bottom-width: 18px;padding-bottom: 18px;padding-right: 24px;padding-left: 24px;">
+            <button type="button" @onclick="Cancel" class="btn-cancel">
+                Cancel
+            </button>
+
+            <div class="form-navigation-actions">
+                <button type="button" @onclick="SaveAsDraft" class="btn-draft">
+                    <svg class="btn-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                    </svg>
+                    Save as Draft
+                </button>
+
+                <button type="button" @onclick="SaveExhibition" class="btn-continue">
+                    @(currentStep == steps.Count - 1 ? "Publish Exhibition" : "Continue")
+                    <svg class="btn-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+@code {
+    [Parameter]
+    public int? ExhibitId { get; set; }
+
+    private bool IsEdit => ExhibitId.HasValue;
+    private string pageTitle = "Create Exhibition";
+
+    private int currentStep = 0;
+    private string searchQuery = "";
+    private bool selectAll = false;
+    private int currentPage = 1;
+    private int pageSize = 20;
+    
+    private string openingFileName = "No file chosen";
+    private string closingFileName = "No file chosen";
+    private string reminderFileName = "No file chosen";
+
+
+    private List<StepInfo> steps = new()
+    {
+        new StepInfo { Id = 0, Title = "Exhibition Details", Subtitle = "Basic information" },
+        new StepInfo { Id = 1, Title = "Select Artwork", Subtitle = "Choose pieces to display" },
+        new StepInfo { Id = 2, Title = "Slides & Arrangement", Subtitle = "Configure exhibition flow" }
+    };
+
+    private Dictionary<int, bool> stepValidation = new()
+    {
+        { 0, false },
+        { 1, false },
+        { 2, false }
+    };
+
+    private ExhibitFormData formData = new();
+    private string broadcastMessage = string.Empty;
+    private List<string> tags = new();
+    private string newTag = string.Empty;
+
+    private List<ArtworkItem> artworks = new();
+    // Full set of artworks loaded from server. `artworks` will contain the initial page for fast render.
+    private List<ArtworkItem> allArtworks = new();
+    private bool allArtworksLoaded = false;
+    private string artworkFilter = "approved"; // "approved" | "members"
+
+    private IEnumerable<ArtworkItem> FilteredArtworks
+    {
+        get
+        {
+            // Use the full set once background load completes; otherwise use the initial fast subset.
+            var source = allArtworksLoaded ? allArtworks : artworks;
+            return source
+                .Where(a =>
+                    (artworkFilter == "approved" && string.Equals(a.Approval, "Approved", StringComparison.OrdinalIgnoreCase))
+                    || (artworkFilter == "members" && a.IsMember)
+                )
+                .Where(a => string.IsNullOrWhiteSpace(searchQuery) || a.Title.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) || a.ArtistName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(a => a.DateSubmitted);
+        }
+    }
+
+    private IEnumerable<ArtworkItem> PagedArtworks => FilteredArtworks
+        .Skip((currentPage - 1) * pageSize)
+        .Take(pageSize);
+
+    private void SetArtworkFilter(string mode)
+    {
+        artworkFilter = mode ?? "approved";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+        await LoadApprovedArtworksAsync();
+    }
+
+    private async Task LoadApprovedArtworksAsync()
+    {
+        try
+        {
+            var response = await CommonHttpRequest.MakeRequest<ApiResponse<List<MessageDto>>>("GET", "GetAllMessages");
+            if (response?.Data != null)
+            {
+                var approved = response.Data.Where(m => m.isApproved == true)
+                                             .OrderByDescending(m => m.createdDate)
+                                             .ToList();
+
+                // Build the full list first
+                allArtworks = approved.Select(m => new ArtworkItem
+                {
+                    ArtistName = !string.IsNullOrWhiteSpace(m.artistName) ? m.artistName : (m.messageCreatorName ?? "Unknown"),
+                    Title = !string.IsNullOrWhiteSpace(m.artTitle) ? m.artTitle : (m.messageTitle ?? "Untitled"),
+                    DateSubmitted = m.createdDate.HasValue ? m.createdDate.Value.ToString("o") : string.Empty,
+                    ThumbnailColor = GetColorForId(m.messageId),
+                    ImageUrl = m.messageImage ?? string.Empty,
+                    Approval = m.isApproved == true ? "Approved" : (m.isApproved == false ? "Rejected" : "Pending"),
+                    MemberStatus = m.userApproved == true ? "Member" : "Guest",
+                    IsMember = m.userApproved == true,
+                    Tags = m.tags != null ? string.Join(", ", m.tags) : string.Empty
+                }).ToList();
+
+                // Seed a fast initial view with only the first page
+                artworks = allArtworks.Take(pageSize).ToList();
+                await InvokeAsync(StateHasChanged);
+
+                // Load remaining items in background and then update UI to use full set
+                _ = LoadRemainingArtworksAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("LoadApprovedArtworksAsync error: " + ex.Message);
+        }
+    }
+
+    private async Task LoadRemainingArtworksAsync()
+    {
+        // small delay to ensure initial render completes quickly
+        await Task.Delay(50);
+        allArtworksLoaded = true;
+        // ensure UI updates on the Blazor context
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetColorForId(int id)
+    {
+        // Simple deterministic color chooser based on id
+        var palette = new[] { "bg-rose-100", "bg-sky-100", "bg-violet-100", "bg-amber-100", "bg-green-100", "bg-pink-100" };
+        if (id <= 0) return palette[0];
+        return palette[id % palette.Length];
+    }
+
+    private void GoToStep(int stepIndex)
+    {
+        currentStep = stepIndex;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Update title based on mode
+        pageTitle = IsEdit ? "Edit Exhibition" : "Create Exhibition";
+
+        if (IsEdit)
+        {
+            try
+            {
+                // Load exhibits and find the one matching ExhibitId
+                var list = await ExhibitService.GetExhibitsAsync(AppState.MuseumId);
+                var found = list.FirstOrDefault(e => e.Id == ExhibitId.Value);
+                    if (found != null)
+                    {
+                        formData.ExhibitName = found.ExhibitName;
+                        formData.IdealAges = found.IdealAges;
+                        // Populate tag list from server string (comma/semicolon separated)
+                        tags = ParseTags(found.Tags);
+                        formData.KeyThemes = string.Join(", ", tags);
+
+                        // Normalize traveling value to match select option values ("yes"/"no")
+                        formData.Traveling = NormalizeTraveling(found.Travelling);
+
+                        // Map server location/display names to local select option values
+                        formData.Location = MapLocationToOption(found.LocalDisplayLocationName ?? found.LocalDisplay);
+
+                        formData.Description = found.Description;
+                        formData.OpeningSlide = found.Startover ?? string.Empty;
+                        formData.ReminderSlide = found.ReminderInterval?.ToString() ?? string.Empty;
+                        formData.ClosingSlide = found.EndCover ?? string.Empty;
+                    }
+            }
+            catch
+            {
+                // ignore for now; form stays default
+            }
+        }
+    }
+
+    private string GetStepNodeClass(int index)
+    {
+        var classes = "step-node group focus:outline-none ";
+        if (currentStep == index) classes += "active";
+        else if (currentStep > index) classes += "completed";
+        return classes;
+    }
+
+    private string GetStepTitleClass(int index)
+    {
+        var baseClass = "step-title transition-colors ";
+        if (currentStep >= index) return baseClass + "text-gray-900";
+        return baseClass + "text-gray-400";
+    }
+
+    private string GetStepLineClass(int index)
+    {
+        var baseClass = "flex-1 h-0.5 mx-4 mb-12 transition-colors ";
+        
+        return baseClass + (currentStep > index ? "bg-blue-600" : "bg-gray-200");
+    }
+
+    private string GetPageButtonClass(int page)
+    {
+        var baseClass = "w-10 h-10 rounded-lg text-sm font-medium ";
+        
+        if (page == currentPage)
+            return baseClass + "bg-blue-600 text-white";
+        else
+            return baseClass + "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50";
+    }
+
+    private void ChangePage(int page)
+    {
+        currentPage = page;
+        StateHasChanged();
+    }
+
+    private void SetPageSize(int size)
+    {
+        if (size <= 0) return;
+        pageSize = size;
+        currentPage = 1;
+        StateHasChanged();
+    }
+
+    private async Task OnOpeningFileSelected(InputFileChangeEventArgs e)
+    {
+        openingFileName = e.File.Name;
+        // Handle file upload logic here
+    }
+
+    private async Task OnClosingFileSelected(InputFileChangeEventArgs e)
+    {
+        closingFileName = e.File.Name;
+        // Handle file upload logic here
+    }
+
+    private async Task OnReminderFileSelected(InputFileChangeEventArgs e)
+    {
+        reminderFileName = e.File.Name;
+        // Handle file upload logic here
+    }
+
+    private void SelectOpeningMessage()
+    {
+        // Add your message selection logic here
+    }
+
+    private void SelectClosingMessage()
+    {
+        // Add your message selection logic here
+    }
+
+    private void SelectReminderMessage()
+    {
+        // Add your message selection logic here
+    }
+
+    private void HandleTagKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" || e.Key == "\r")
+        {
+            AddTag();
+        }
+    }
+
+    private void AddTag()
+    {
+        var t = (newTag ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(t)) return;
+        if (!tags.Contains(t, StringComparer.OrdinalIgnoreCase))
+        {
+            tags.Add(t);
+            UpdateKeyThemesFromTags();
+        }
+        newTag = string.Empty;
+    }
+
+    private void ClearNewTag()
+    {
+        newTag = string.Empty;
+    }
+
+    private void RemoveTag(string t)
+    {
+        tags.RemoveAll(x => string.Equals(x, t, StringComparison.OrdinalIgnoreCase));
+        UpdateKeyThemesFromTags();
+    }
+
+    private void UpdateKeyThemesFromTags()
+    {
+        formData.KeyThemes = string.Join(", ", tags);
+    }
+
+    private List<string> ParseTags(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return new List<string>();
+        var parts = raw.Split(new[] {',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                       .Select(p => p.Trim())
+                       .Where(p => !string.IsNullOrEmpty(p))
+                       .Distinct(StringComparer.OrdinalIgnoreCase)
+                       .ToList();
+        return parts;
+    }
+
+    private void SaveAsDraft()
+    {
+        // Add your save as draft logic here
+    }
+
+    private void SaveExhibition()
+    {
+        if (currentStep < steps.Count - 1)
+        {
+            currentStep++;
+        }
+        else
+        {
+            // Final save logic here
+        }
+    }
+
+    // Normalize traveling string from server into select option values
+    private string NormalizeTraveling(string? val)
+    {
+        if (string.IsNullOrWhiteSpace(val)) return string.Empty;
+        var s = val.Trim().ToLowerInvariant();
+        if (s == "yes" || s == "y" || s == "true" || s == "1") return "yes";
+        if (s == "no" || s == "n" || s == "false" || s == "0") return "no";
+        // Fallback: if contains y/n
+        if (s.Contains("y")) return "yes";
+        if (s.Contains("n")) return "no";
+        return string.Empty;
+    }
+
+    // Map server location/display names to the option value used in the select control
+    private string MapLocationToOption(string? displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName)) return string.Empty;
+        var s = displayName.Trim().ToLowerInvariant();
+        if (s.Contains("art") || s.Contains("gallery") || s.Contains("central")) return "gallery-a";
+        if (s.Contains("children") || s.Contains("children's")) return "museum-b";
+        if (s.Contains("north")) return "north-wing";
+        // No matching option; return empty so the select shows placeholder instead of a mismatched label
+        return string.Empty;
+    }
+
+    public class StepInfo
+    {
+        public int Id { get; set; }
+        public string Title { get; set; }
+        public string Subtitle { get; set; }
+    }
+
+    public class ExhibitFormData
+    {
+        public string ExhibitName { get; set; } = "";
+        public string IdealAges { get; set; } = "";
+        public string KeyThemes { get; set; } = "";
+        public string Traveling { get; set; } = "";
+        public string Location { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string OpeningSlide { get; set; } = "";
+        public string ClosingSlide { get; set; } = "";
+        public string ReminderSlide { get; set; } = "";
+    }
+
+    public class ArtworkItem
+    {
+        public string ArtistName { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string DateSubmitted { get; set; } = "";
+        public string ThumbnailColor { get; set; } = "";
+        public string? ImageUrl { get; set; }
+        public string Approval { get; set; } = "Pending";
+        public bool IsSelected { get; set; }
+        public string MemberStatus { get; set; } = "Standard";
+        public string Tags { get; set; } = "";
+        public bool IsMember { get; set; }
+    }
+    private async Task Cancel()
+    {
+        // Navigate back to the exhibits list
+        NavigationManager.NavigateTo("/exhibits");
+        await Task.CompletedTask;
+    }
+
+    //checkbox select all logic
+    private bool SelectAll
+    {
+        get => selectAll;
+        set
+        {
+            if (selectAll == value) return;
+
+            selectAll = value;
+
+            foreach (var artwork in FilteredArtworks)
+            {
+                artwork.IsSelected = selectAll;
+            }
+        }
+    }
+
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        selectAll = (bool)e.Value!;
+
+        foreach (var artwork in FilteredArtworks)
+        {
+            artwork.IsSelected = selectAll;
+        }
+    }
+
+    private void UpdateSelectAllState(ChangeEventArgs e)
+    {
+        selectAll = FilteredArtworks.Any()
+            && FilteredArtworks.All(a => a.IsSelected);
+    }
+
+        // -----------------------------
+    // Mobile / UI Actions
+    // -----------------------------
+    private void ToggleFiltersMobile()
+    {
+        // No-op for this page (kept for compatibility with TopBar callback)
+    }
+
+    private async Task HandleAddContent()
+    {
+    }
+
+    private void ToggleMobileSidebar()
+    {
+        // Implement sidebar toggle if required
+    }
+}

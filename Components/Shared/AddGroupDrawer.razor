@@ -1,0 +1,427 @@
+@using MuseumAdmin.Models
+@using MuseumAdmin.Services
+@using System.Text.Json
+@using Microsoft.AspNetCore.Components.Forms
+@inject ChatService ChatService
+@inject AppState AppState
+@inject NotificationService NotificationService
+
+@if (IsVisible)
+{
+    <div class="overlay" @onclick="CloseModal" style="opacity: 1; pointer-events: auto;"></div>
+    <div class="drawer" style="transform: translateX(0); z-index: 1050;">
+        <div class="drawer-header">
+            <div style="display: flex; flex-direction: column;">
+                <h2>Add Group</h2>
+                <div class="step-indicator" style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.05em;">
+                    Step @currentStep of 3
+                </div>
+            </div>
+            <button class="drawer-close" @onclick="CloseModal" aria-label="Close drawer">×</button>
+        </div>
+
+        <div class="drawer-content">
+            <EditForm EditContext="@editContext" OnValidSubmit="HandleSaveGroup">
+                <DataAnnotationsValidator />
+                
+                <!-- STEP 1: GROUP IDENTIFICATION -->
+                @if (currentStep == 1)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 1: Group Identification</span>
+                        <div class="form-group mb-4">
+                            <label class="form-label">Group Name *</label>
+                            <InputText @bind-Value="groupFormData.GroupName" class="form-control" placeholder="e.g. Family Support Session" />
+                            <ValidationMessage For="@(() => groupFormData.GroupName)" class="text-danger" />
+                        </div>
+                    </div>
+                }
+
+                <!-- STEP 2: PARTICIPANT SELECTION -->
+                @if (currentStep == 2)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 2: Select Participants</span>
+                        <p class="text-muted small mb-3">Click on a family to select which individuals will join this group.</p>
+                        
+                        <div class="participant-selection-list">
+                            @foreach (var family in Families)
+                            {
+                                <div class="participant-family-row" @onclick="() => OpenChildSelection(family)">
+                                    <div class="family-info">
+                                        <span class="family-name">@family.Name</span>
+                                        <span class="family-phone">@MaskPhoneNumber(family.Phone ?? "")</span>
+                                    </div>
+                                    <div class="selection-status">
+                                        @if (family.Children.Any(c => c.IsSelected))
+                                        {
+                                            <span class="badge-selection">
+                                                @(family.Children.Count(c => c.IsSelected)) Selected
+                                            </span>
+                                        }
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="9 18 15 12 9 6"></polyline>
+                                        </svg>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- STEP 3: PROVIDER SELECTION -->
+                @if (currentStep == 3)
+                {
+                    <div class="drawer-section fade-in">
+                        <span class="drawer-section-title">Step 3: Assign Providers</span>
+                        <p class="section-subtitle" style="color: #64748b; font-size: 14px; margin-bottom: 20px;">
+                            Select one or more providers who will be managing this group.
+                        </p>
+                        
+                        <div class="providers-checklist" style="display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; max-height: 400px; overflow-y: auto;">
+                            @if (AvailableProviders == null || !AvailableProviders.Any())
+                            {
+                                <div style="text-align: center; color: #64748b; padding: 20px;">
+                                    <span>No providers found.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var provider in AvailableProviders)
+                                {
+                                    <label class="provider-item" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s ease;">
+                                        <input type="checkbox" 
+                                               checked="@groupFormData.ProviderIds.Contains(provider.UserId)"
+                                               @onchange="@(e => ToggleProviderSelection(provider.UserId, (bool)e.Value))"
+                                               style="width: 18px; height: 18px; cursor: pointer;" />
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span style="font-weight: 500; color: #1e293b;">@provider.FullName</span>
+                                            <span style="font-size: 12px; color: #64748b;">Provider</span>
+                                        </div>
+                                    </label>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="drawer-actions mt-4" style="z-index: 5; position: relative;">
+                    @if (currentStep == 1)
+                    {
+                        <button type="button" class="btn cancel" @onclick="CloseModal">Dismiss</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn cancel" @onclick="BackStep" @onclick:stopPropagation="true">Back</button>
+                    }
+
+                    <div style="flex: 1;"></div>
+
+                    @if (currentStep < 3)
+                    {
+                        <button type="button" class="btn primary" @onclick="NextStep" @onclick:stopPropagation="true">
+                            <span>Next</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 8px;">
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                <polyline points="12 5 19 12 12 19"></polyline>
+                            </svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="submit" class="btn primary @(isSaving ? "btn-loading" : "")" disabled="@isSaving">
+                            @if (isSaving)
+                            {
+                                <span class="spinner-sm"></span>
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                </svg>
+                                <span>Save Group</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </EditForm>
+        </div>
+    </div>
+
+    @if (showChildDrawer && activeFamily != null)
+    {
+        <div class="secondary-drawer-overlay fade-in" @onclick="CloseChildDrawer" style="z-index: 2000;">
+            <div class="secondary-drawer slide-in-right" @onclick:stopPropagation="true" style="z-index: 2001;">
+                <div class="secondary-drawer-header">
+                    <button class="btn-back-drawer" @onclick="CloseChildDrawer">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        <span>Back</span>
+                    </button>
+                    <div class="header-titles">
+                        <h3>Select Individuals</h3>
+                        <p>for @activeFamily.Name</p>
+                    </div>
+                </div>
+                
+                <div class="secondary-drawer-body">
+                    <div class="child-selection-grid">
+                        @foreach (var child in activeFamily.Children)
+                        {
+                            <label class="child-select-card @(child.IsSelected ? "is-selected" : "")">
+                                <input type="checkbox" @bind="child.IsSelected" />
+                                <div class="card-content">
+                                    <div class="selection-indicator">
+                                        <div class="checkbox-visual"></div>
+                                    </div>
+                                    <div class="child-brief">
+                                        <span class="name">@child.Name</span>
+                                    </div>
+                                </div>
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                <div class="secondary-drawer-footer">
+                    <button class="btn-done" @onclick="CloseChildDrawer">Done</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public List<SelectableFamily> Families { get; set; } = new();
+    [Parameter] public string DefaultMemberType { get; set; } = "Contact";
+    [Parameter] public EventCallback OnGroupCreated { get; set; }
+    @inject UserService UserService
+
+    private List<ProviderDto> AvailableProviders = new();
+
+    private GroupFormData groupFormData = new();
+    private EditContext editContext = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        editContext = new EditContext(groupFormData);
+        await AppState.EnsureInitializedAsync();
+        await LoadProvidersAsync();
+    }
+
+    private async Task LoadProvidersAsync()
+    {
+        try
+        {
+            AvailableProviders = await UserService.GetProvidersAsync(AppState.MuseumId, AppState.UserName);
+            Console.WriteLine($"[AddGroupDrawer] Loaded {AvailableProviders?.Count ?? 0} Providers.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading Providers: {ex.Message}");
+        }
+    }
+
+    private bool isSaving = false;
+    private bool showChildDrawer = false;
+    private SelectableFamily? activeFamily;
+
+    private async Task CloseModal()
+    {
+        currentStep = 1;
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private void OpenChildSelection(SelectableFamily family)
+    {
+        activeFamily = family;
+        showChildDrawer = true;
+    }
+
+    private void CloseChildDrawer()
+    {
+        showChildDrawer = false;
+    }
+
+    private int currentStep = 1;
+
+
+    private async Task NextStep() 
+    {
+        if (currentStep == 1)
+        {
+            if (editContext != null)
+            {
+                var isValid = editContext.Validate();
+                if (!isValid)
+                {
+                    return; // This triggers DataAnnotationsValidator to show the red validation errors in the UI
+                }
+            }
+            
+            if (string.IsNullOrWhiteSpace(groupFormData.GroupName))
+            {
+                NotificationService.Warning("Name Required", "Please provide a Group Name.");
+                return;
+            }
+        }
+        else if (currentStep == 2)
+        {
+            var hasChildSelected = Families.SelectMany(f => f.Children).Any(c => c.IsSelected);
+            if (!hasChildSelected)
+            {
+                NotificationService.Warning("Selection Required", "Please select at least one child to be part of the group.");
+                return;
+            }
+        }
+        
+        Console.WriteLine($"[AddGroupDrawer] Moving to next step. Current: {currentStep}");
+        currentStep++;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task BackStep() 
+    {
+        Console.WriteLine($"[AddGroupDrawer] Moving to back step. Current: {currentStep}");
+        currentStep--;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleProviderSelection(int providerId, bool isSelected)
+    {
+        if (isSelected)
+        {
+            if (!groupFormData.ProviderIds.Contains(providerId))
+                groupFormData.ProviderIds.Add(providerId);
+        }
+        else
+        {
+            groupFormData.ProviderIds.Remove(providerId);
+        }
+    }
+
+    private async Task HandleSaveGroup()
+    {
+        if (isSaving) return;
+
+        Console.WriteLine($"[DEBUG] HandleSaveGroup started. GroupName: '{groupFormData.GroupName}'");
+
+        if (string.IsNullOrWhiteSpace(groupFormData.GroupName))
+        {
+            NotificationService.Warning("Missing Name", "Please provide a Group Name.");
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            
+            Console.WriteLine("[DEBUG] Initializing AppState...");
+            await AppState.EnsureInitializedAsync();
+            Console.WriteLine($"[DEBUG] AppState.UserName: {AppState.UserName}, UserId: {AppState.UserId}, MuseumId: {AppState.MuseumId}");
+            
+            if (AvailableProviders == null || !AvailableProviders.Any())
+            {
+                Console.WriteLine("[DEBUG] AvailableProviders empty/null, reloading Providers...");
+                await LoadProvidersAsync();
+            }
+            Console.WriteLine($"[DEBUG] AvailableProviders count: {AvailableProviders?.Count ?? 0}");
+
+            var request = new CreateGroupRequest
+            {
+                GroupName = groupFormData.GroupName,
+                CreatedByType = AppState.Role ?? "Provider", 
+                CreatedById = AppState.UserId,    
+                MuseumId = AppState.MuseumId,
+                Members = Families
+                    .SelectMany(f => f.Children)
+                    .Where(c => c.IsSelected)
+                    .Select(c => new GroupMemberDto
+                    {
+                        MemberType = DefaultMemberType,
+                        MemberId = c.Id,
+                        Name = c.Name
+                    }).ToList()
+            };
+
+            Console.WriteLine($"[DEBUG] Added {request.Members.Count} child members.");
+
+            // Add selected Providers
+            Console.WriteLine($"[DEBUG] Selected ProviderIds: {string.Join(", ", groupFormData.ProviderIds)}");
+            foreach (var providerId in groupFormData.ProviderIds)
+            {
+                // Skip if this provider is already the creator (backend adds creator automatically)
+                if (providerId == AppState.UserId)
+                {
+                    Console.WriteLine($"[DEBUG] Skipping provider {providerId} as they are the group creator.");
+                    continue;
+                }
+
+                var provider = AvailableProviders?.FirstOrDefault(p => p.UserId == providerId);
+                Console.WriteLine($"[DEBUG] Looking up Provider {providerId}: Found? {provider != null}, Name: {provider?.FullName ?? "NULL"}");
+                
+                request.Members.Add(new GroupMemberDto
+                {
+                    MemberType = AppState.Role ?? "Provider",
+                    MemberId = providerId,
+                    Name = provider?.FullName
+                });
+            }
+
+            var jsonRequest = JsonSerializer.Serialize(request, new JsonSerializerOptions { WriteIndented = true });
+            Console.WriteLine($"[DEBUG] FINAL REQUEST PAYLOAD ADD GROUP:\n{jsonRequest}");
+
+            if (!request.Members.Any())
+            {
+                NotificationService.Warning("No Members", "Please select at least one child to be part of the group.");
+                isSaving = false;
+                return;
+            }
+
+            bool success = await ChatService.CreateGroupWithMembersAsync(request, AppState.UserName);
+            Console.WriteLine($"[DEBUG] API Call Result: {success}");
+
+            if (success)
+            {
+                NotificationService.Success("Group Saved", $"'{request.GroupName}' has been created with {request.Members.Count} members.");
+                await OnGroupCreated.InvokeAsync();
+                await CloseModal();
+                groupFormData = new GroupFormData();
+                editContext = new EditContext(groupFormData);
+                currentStep = 1;
+            }
+            else
+            {
+                NotificationService.Error("Save Failed", "There was an error creating the group.");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error", "An unexpected error occurred while saving the group.");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private string MaskPhoneNumber(string? phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber)) return "";
+        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
+        if (digits.Length < 4) return phoneNumber;
+        
+        if (digits.Length == 10)
+            return $"(XXX) XXX-{digits.Substring(6, 4)}";
+        if (digits.Length == 11 && digits.StartsWith("1"))
+            return $"+1 (XXX) XXX-{digits.Substring(7, 4)}";
+            
+        return "XXX-XXX-" + (digits.Length > 4 ? digits.Substring(digits.Length - 4) : digits);
+    }
+}

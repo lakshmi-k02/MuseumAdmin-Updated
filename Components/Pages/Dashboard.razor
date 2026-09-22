@@ -1,0 +1,230 @@
+@page "/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+
+<div class="dashboard-root">
+    <div class="dashboard-header">
+        <h2>Dashboard</h2>
+        <div class="dashboard-controls">
+            <div class="control-group">
+                <span class="control-icon">📅</span>
+                <select class="date-select">
+                    <option>Last 30 Days</option>
+                    <option>Last 7 Days</option>
+                    <option>This Month</option>
+                </select>
+            </div>
+            <button class="notif-btn">
+                 <!-- Bell Icon -->
+                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                 </svg>
+                 <span class="badge-dot">3</span>
+            </button>
+            <div class="user-profile-widget">
+                <div class="avatar">A</div>
+                <span class="username">admin</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="stats-row">
+        <!-- Card 1: Pending Reviews -->
+        <div class="stat-card">
+            <div class="stat-icon-wrapper warn-bg">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-label">Pending Reviews</div>
+                <div class="stat-number">129</div>
+                <div class="stat-desc">Needs your attention</div>
+            </div>
+        </div>
+
+        <!-- Card 2: Approved -->
+        <div class="stat-card">
+            <div class="stat-icon-wrapper success-bg">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-label">Approved <span class="badge-success">This Month</span></div>
+                <div class="stat-number">355</div>
+                <div class="stat-desc">Great progress</div>
+            </div>
+        </div>
+
+        <!-- Card 3: Total Submissions -->
+        <div class="stat-card">
+            <div class="stat-icon-wrapper blue-bg">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 0 0 0-2 2v16a2 0 0 0 2 2h12a2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-label">Total Submissions</div>
+                <div class="stat-number">1,204</div>
+                <div class="stat-desc">All-time</div>
+            </div>
+        </div>
+
+        <!-- Card 4: Avg Review Time -->
+        <div class="stat-card">
+            <div class="stat-icon-wrapper purple-bg">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-label">Avg Review Time</div>
+                <div class="stat-number">2h 14m</div>
+                <div class="stat-desc">Last 7 days</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Grid -->
+    <div class="main-grid">
+        <!-- Main Chart -->
+        <div class="card chart-section">
+            <div class="card-header">
+                <h3>Submissions Over Time</h3>
+                <span class="chart-period">Last 30 days</span>
+            </div>
+            
+            <div class="chart-container">
+                <!-- Detailed SVG Bar Chart -->
+                <svg viewBox="0 0 800 280" preserveAspectRatio="none" class="main-chart-svg">
+                    <!-- Grid Lines -->
+                    <g class="grid-lines" stroke="#e5e7eb" stroke-dasharray="4,4">
+                        <line x1="40" y1="50" x2="780" y2="50"></line> <!-- 100 -->
+                        <line x1="40" y1="100" x2="780" y2="100"></line> <!-- 75 -->
+                        <line x1="40" y1="150" x2="780" y2="150"></line> <!-- 50 -->
+                        <line x1="40" y1="200" x2="780" y2="200"></line> <!-- 25 -->
+                        <line x1="40" y1="250" x2="780" y2="250" stroke="#d1d5db" stroke-dasharray="0"></line> <!-- 0 baseline -->
+                    </g>
+
+                    <!-- Y-Axis Labels -->
+                    <g class="axis-labels" font-size="12" fill="#9ca3af" text-anchor="end">
+                        <text x="35" y="55">100</text>
+                        <text x="35" y="105">75</text>
+                        <text x="35" y="155">50</text>
+                        <text x="35" y="205">25</text>
+                        <text x="35" y="255">0</text>
+                    </g>
+                    
+                    <!-- X-Axis Labels -->
+                    <g class="axis-labels" font-size="12" fill="#9ca3af" text-anchor="middle">
+                        <text x="80" y="270">Mar 25</text>
+                        <text x="220" y="270">Apr 01</text>
+                        <text x="360" y="270">Apr 08</text>
+                        <text x="500" y="270">Apr 15</text>
+                        <text x="640" y="270">Apr 22</text>
+                    </g>
+
+                    <!-- Bars -->
+                    <g class="bars" fill="#93c5fd"> <!-- Using a lighter blue for normal bars -->
+                        <!-- Generating some mock data bars -->
+                        @for (int i = 0; i < 25; i++) {
+                            // Pseudo-random height logic for visual variety
+                            // Base Y=250. Max height ~200 (top at 50).
+                            var h = 40 + ((i * 17 + 13) % 160); 
+                            var x = 60 + (i * 28);
+                            var isHightlight = i == 18; // Highlight one bar like in the screenshot
+                            var barColor = isHightlight ? "#3b82f6" : "#bfdbfe";
+                            
+                            <rect x="@x" y="@(250 - h)" width="16" height="@h" rx="3" fill="@barColor" class="chart-bar">
+                                <title>Count: @h</title>
+                            </rect>
+                        }
+                    </g>
+                    
+                    <!-- Legend -->
+                    <g transform="translate(680, 20)">
+                         <circle cx="0" cy="0" r="4" fill="#3b82f6"></circle>
+                         <text x="10" y="4" font-size="12" fill="#4b5563">Submissions</text>
+                    </g>
+                </svg>
+            </div>
+            
+            <div class="chart-footer">
+                <div class="footer-stat">
+                    <span class="icon-box">📊</span>
+                    <div>
+                        <div class="stat-title">Submissions this week</div>
+                        <div class="stat-diff positive">+11.5%</div>
+                    </div>
+                </div>
+                <div class="footer-stat">
+                    <div class="big-num">1,204</div>
+                    <div class="label">All-time</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Recent Activity -->
+        <div class="card recent-activity">
+            <div class="card-header">
+                <h3>Recent Activity</h3>
+            </div>
+            <ul class="activity-timeline">
+                <li class="activity-item">
+                     <div class="activity-icon-box success-light">
+                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                     </div>
+                     <div class="activity-details">
+                         <p><strong>Alexa</strong> approved <strong>"Sunflower"</strong> by Aisha</p>
+                         <span class="time">38 mins ago</span>
+                     </div>
+                </li>
+                <li class="activity-item">
+                     <div class="activity-icon-box warn-light">
+                         <span style="font-size:14px">🎨</span> <!-- Fallback emoji or could use svg -->
+                     </div>
+                     <div class="activity-details">
+                         <p>New submission from <a href="#">Jordan Johnson</a></p>
+                         <span class="time">Today, 11:37 AM</span>
+                     </div>
+                </li>
+                 <li class="activity-item">
+                     <div class="activity-icon-box error-light">
+                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                     </div>
+                     <div class="activity-details">
+                         <p><strong>Jennifer Raia</strong> rejected <strong>"Blue Bunny"</strong></p>
+                         <span class="time">Yesterday, 03:24 PM</span>
+                     </div>
+                </li>
+                <li class="activity-item">
+                     <div class="activity-icon-box info-light">
+                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                     </div>
+                     <div class="activity-details">
+                         <p><strong>Vittoria</strong> and <strong>Aida</strong> updated their profile</p>
+                         <span class="time">Yesterday, 03:45 AM</span>
+                     </div>
+                </li>
+            </ul>
+            <div class="activity-footer">
+                <a href="#" class="view-all-link">View All &rarr;</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Placeholder code section - in real app you would load metrics via services
+}

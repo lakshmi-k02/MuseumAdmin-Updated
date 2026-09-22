@@ -1,0 +1,11 @@
+@inject NavigationManager NavigationManager
+
+@code {
+    [Parameter]
+    public string Dest { get; set; } = "/";
+
+    protected override void OnInitialized()
+    {
+        NavigationManager.NavigateTo(Dest);
+    }
+}

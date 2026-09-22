@@ -1,0 +1,156 @@
+@using MuseumAdmin.Services
+@implements IDisposable
+@inject NotificationService NotificationService
+
+<div class="toast-container" aria-live="polite">
+    @foreach (var notification in NotificationService.Notifications)
+    {
+        <div class="toast-item @notification.Type.ToString().ToLower() fade-in-up" @key="notification.Id">
+            <div class="toast-icon">
+                @switch (notification.Type)
+                {
+                    case NotificationType.Success:
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        break;
+                    case NotificationType.Error:
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                        break;
+                    case NotificationType.Warning:
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        break;
+                    default:
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                        break;
+                }
+            </div>
+            <div class="toast-content">
+                @if (!string.IsNullOrEmpty(notification.Title))
+                {
+                    <h4 class="toast-title">@notification.Title</h4>
+                }
+                <p class="toast-message">@notification.Message</p>
+            </div>
+            <button type="button" class="toast-close" @onclick="() => NotificationService.Remove(notification.Id)">×</button>
+        </div>
+    }
+</div>
+
+<style>
+    .toast-container {
+        position: fixed;
+        top: 24px;
+        right: 24px;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-width: 360px;
+        width: 100%;
+    }
+
+    .toast-item {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+        display: flex;
+        padding: 16px;
+        gap: 12px;
+        align-items: flex-start;
+        position: relative;
+        overflow: hidden;
+        pointer-events: auto;
+    }
+
+    .toast-item::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+    }
+
+    .toast-item.success::before { background: #10b981; }
+    .toast-item.error::before { background: #ef4444; }
+    .toast-item.warning::before { background: #f59e0b; }
+    .toast-item.info::before { background: #3b82f6; }
+
+    .toast-icon {
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .success .toast-icon { color: #10b981; }
+    .error .toast-icon { color: #ef4444; }
+    .warning .toast-icon { color: #f59e0b; }
+    .info .toast-icon { color: #3b82f6; }
+
+    .toast-content {
+        flex: 1;
+    }
+
+    .toast-title {
+        margin: 0 0 2px 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .toast-message {
+        margin: 0;
+        font-size: 13px;
+        color: #64748b;
+        line-height: 1.4;
+    }
+
+    .toast-close {
+        flex-shrink: 0;
+        background: transparent;
+        border: none;
+        font-size: 20px;
+        color: #94a3b8;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+        margin-left: 4px;
+        pointer-events: auto;
+    }
+
+    .toast-close:hover {
+        color: #64748b;
+    }
+
+    .fade-in-up {
+        animation: fadeInUp 0.4s ease-out;
+    }
+
+    @@keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px) scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+</style>
+
+@code {
+    private Action? _notificationsChangedHandler;
+
+    protected override void OnInitialized()
+    {
+        _notificationsChangedHandler = () => _ = InvokeAsync(StateHasChanged);
+        NotificationService.OnNotificationsChanged += _notificationsChangedHandler;
+    }
+
+    public void Dispose()
+    {
+        if (_notificationsChangedHandler is not null)
+        {
+            NotificationService.OnNotificationsChanged -= _notificationsChangedHandler;
+        }
+    }
+}

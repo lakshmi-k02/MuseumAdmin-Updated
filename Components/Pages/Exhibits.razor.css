@@ -1,0 +1,486 @@
+/* =========================================
+   EXHIBITS PAGE STYLES
+   ========================================= */
+
+/* Filter Container - Matching Home.razor uplift */
+.filter-container {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 16px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    transition: all 0.3s ease;
+
+    /* ensure filters don't overlap table header */
+    position: relative;
+    z-index: 0;
+}
+
+.filter-container:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+}
+
+.status-filters {
+    gap: 32px;
+}
+
+.status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.status-pills {
+    display: flex;
+    gap: 12px;
+}
+
+.filter-tab {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.filter-tab:hover {
+    background-color: var(--color-border-light);
+    color: var(--color-text-primary);
+}
+
+.filter-tab.active {
+    background-color: var(--color-accent);
+    color: var(--color-text-inverse);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.filter-divider {
+    width: 1px;
+    height: 32px;
+    background: var(--color-border);
+    margin: 0 4px;
+}
+
+/* Modern Search Wrapper */
+.search-filter {
+    flex: 1;
+    max-width: 400px;
+}
+
+.modern-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--color-surface);
+    border: 1.5px solid var(--color-border);
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    height: 44px;
+    width: 100%;
+}
+
+.modern-search-wrapper:focus-within {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.search-icon-left {
+    position: absolute;
+    left: 14px;
+    color: var(--color-text-tertiary);
+    pointer-events: none;
+}
+
+.modern-search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 0 14px 0 44px;
+    font-size: 14px;
+    color: var(--color-text-primary);
+    height: 100%;
+}
+
+.clear-search-btn {
+    background: transparent;
+    border: none;
+    padding: 8px;
+    margin-right: 4px;
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    display: flex;
+    align-items: center;
+}
+
+/* =========================
+   BULK ACTIONS (Floating)
+   ========================= */
+.bulk-toolbar-floating {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--color-border);
+    padding: 8px 12px 8px 24px;
+    border-radius: 100px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    z-index: 1000;
+    width: fit-content;
+    pointer-events: auto;
+}
+
+.bulk-count {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bulk-count::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: var(--color-accent);
+    border-radius: 50%;
+}
+
+.bulk-actions-group {
+    display: flex;
+    gap: 8px;
+}
+
+.bulk-btn {
+    height: 36px;
+    padding: 0 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.bulk-btn.secondary {
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+
+.bulk-btn.danger-solid {
+    background: var(--color-error);
+    color: white;
+}
+
+.btn-close-toolbar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border);
+    background: white;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* =========================
+   TABLE STYLES
+   ========================= */
+.table-card {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    /* bring table above filters to avoid visual overlap */
+    position: relative;
+    z-index: 1;
+}
+
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    background: var(--color-border-light);
+    padding: 14px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.data-table td {
+    padding: 16px;
+    border-bottom: 1px solid var(--color-border-light);
+    font-size: 14px;
+    vertical-align: middle;
+}
+
+.data-table tr:hover {
+    background-color: var(--color-bg);
+}
+
+.data-table tr.row-selected {
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+.name-cell {
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.checkbox-col {
+    width: 48px;
+    text-align: center;
+}
+
+input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-accent);
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+    display: inline-block;
+    min-width: 56px;
+    text-align: center;
+    vertical-align: middle;
+    background: var(--color-border-light);
+    color: var(--color-text-primary);
+}
+
+/* Override global admin-card absolute positioning when used inside the table
+   so status badges stay in their table cell rather than floating to the card corner */
+.data-table .status-badge,
+.table-card .status-badge {
+    position: static !important;
+    top: auto !important;
+    right: auto !important;
+    z-index: auto !important;
+}
+
+.status-badge.active {
+    background: rgba(22, 163, 74, 0.1);
+    color: var(--color-success);
+}
+
+.status-badge.draft {
+    background: var(--color-border-light);
+    color: var(--color-text-primary);
+}
+
+/* Specific Column Alignments */
+.actions-col {
+    text-align: right !important;
+    padding-right: 24px !important;
+}
+
+/* Table Actions */
+.table-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+}
+
+.action-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-accent);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all var(--transition-base);
+}
+
+.action-link:hover {
+    background: rgba(59, 130, 246, 0.08);
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.btn-icon {
+    background: transparent;
+    border: none;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-size: 18px;
+}
+
+/* Pagination */
+.pagination-container {
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border-light);
+}
+
+.pagination-info {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.pagination {
+    display: flex;
+    gap: 8px;
+    list-style: none;
+}
+
+.pagination-item {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.pagination-item:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+}
+
+.pagination-item.active {
+    background: var(--color-accent);
+    color: white;
+    border-color: var(--color-accent);
+}
+
+/* Responsiveness */
+@media (max-width: 768px) {
+    .filter-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .filter-divider {
+        display: none;
+    }
+
+    .mobile-collapsed .search-filter {
+        display: none;
+    }
+
+    .mobile-filter-arrow .arrow {
+        transition: transform 0.2s;
+    }
+
+    .mobile-expanded .arrow {
+        transform: rotate(180deg);
+    }
+}
+
+/* Page loader overlay */
+.page-loader-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    z-index: 1200;
+    transition: opacity .25s ease, visibility .25s ease;
+}
+
+.page-loader-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.page-loader-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 22px;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(16, 24, 40, 0.12);
+    background: linear-gradient(180deg, #ffffff, #fbfbfb);
+    color: var(--color-text, #111827);
+}
+
+.loader-ring {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 4px solid rgba(0, 0, 0, 0.08);
+    border-top-color: var(--primary, #2563eb);
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.loader-text {
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.2px;
+}
+
+.loader-sub {
+    font-size: 12px;
+    color: rgba(17, 24, 39, 0.6);
+}
+
+.dropdown-chevron {
+    display: inline-block;
+    vertical-align: middle;
+    transition: transform .18s ease;
+    stroke: currentColor;
+}

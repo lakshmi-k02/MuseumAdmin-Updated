@@ -1,0 +1,320 @@
+/* Family Card Premium Styles - Global Assets */
+
+.family-card-outer-premium {
+    background: #ffffff;
+    border: 1px solid #eef2f6;
+    border-radius: 20px;
+    padding: 24px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    position: relative;
+    overflow: hidden;
+}
+
+.family-card-outer-premium:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.05);
+}
+
+/* Family Header Premium */
+.family-header-row-premium {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.family-intro-group-premium {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.family-icon-box-themed-premium {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+}
+
+/* Premium Gradients */
+.fam-color-indigo-premium .family-icon-box-themed-premium {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.fam-color-amber-premium .family-icon-box-themed-premium {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.fam-color-purple-premium .family-icon-box-themed-premium {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+}
+
+.fam-color-blue-premium .family-icon-box-themed-premium {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+.family-id-info-premium {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.phone-display-row-premium {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.phone-label-premium {
+    font-size: 10px;
+    font-weight: 800;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+}
+
+.phone-val-premium {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.parents-list-inline-premium {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.parent-entry-premium {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 12px;
+    border-right: 1px solid #e2e8f0;
+}
+
+.parent-entry-premium:last-child {
+    border-right: none;
+}
+
+.badge-parent-premium {
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.parent-name-bold-premium {
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.parent-name-placeholder-premium {
+    font-size: 14px;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+.btn-micro-edit-premium,
+.btn-micro-add-premium {
+    background: transparent;
+    border: none;
+    color: #3b82f6;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.btn-micro-edit-premium:hover {
+    background: #f0f7ff;
+}
+
+.btn-icon-danger-premium,
+.btn-icon-primary-premium {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-icon-primary-premium {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.btn-icon-primary-premium:hover {
+    background: #e2e8f0;
+    color: #334155;
+    transform: translateY(-1px);
+}
+
+.btn-icon-danger-premium {
+    background: #fff1f2;
+    color: #fb7185;
+}
+
+.btn-icon-danger-premium:hover {
+    background: #ffe4e6;
+    color: #e11d48;
+    transform: translateY(-1px);
+}
+
+.family-card-actions-premium {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.btn-action-chat-premium,
+.btn-action-assign-premium {
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid #dbe3ec;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.btn-action-chat-premium {
+    background: #ffffff;
+    color: #334155;
+}
+
+.btn-action-chat-premium:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.btn-action-assign-premium {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.btn-action-assign-premium:hover:not(:disabled) {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.btn-action-chat-premium:disabled,
+.btn-action-assign-premium:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Children Grid Preview Premium */
+.children-grid-preview-premium {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.child-tile-compact-premium {
+    background: #f8fafc;
+    border: 1px solid #eef2f6;
+    border-radius: 12px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.child-tile-compact-premium:hover {
+    background: #ffffff;
+    border-color: #3b82f6;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+}
+
+.tile-avatar-sm-premium {
+    width: 32px;
+    height: 32px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #3b82f6;
+}
+
+.child-name-sm-premium {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.child-age-sm-premium {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.tile-chevron-sm-premium {
+    margin-left: auto;
+    color: #cbd5e1;
+}
+
+/* Expansion Badge Styles */
+.expansion-badge-premium {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.expansion-badge-premium:hover {
+    background: #eff6ff;
+    border-color: #c7d2fe;
+    color: #2563eb;
+    transform: none;
+}
+/* Expansion Row and Icon Styles */
+.expansion-icon-premium {
+    transition: transform 0.3s ease;
+    color: currentColor;
+    margin-left: 4px;
+}
+
+.is-expanded .expansion-icon-premium {
+    transform: rotate(180deg);
+}
+
+.expansion-row-families {
+    display: flex;
+    /* justify-content: center;
+    align-items: center; */
+}

@@ -1,0 +1,455 @@
+@using MuseumAdmin.Models
+@using MuseumAdmin.Services
+@using System.Globalization
+
+@inject NotificationService NotificationService
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop timing-modal-overlay fade-in" @onclick="HandleClose">
+        <div class="modal-dialog modal-timing fade-in-up" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h3>Timing Configuration</h3>
+                    <p>Configure how <strong>@TargetName</strong> is delivered</p>
+                </div>
+                <button type="button" class="btn-close-modal" @onclick="HandleClose">×</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="timing-type-toggle">
+                    <button type="button"
+                            class="toggle-btn @(ActiveTiming.TimingType == "Relative" ? "active" : "")"
+                            @onclick='() => ActiveTiming.TimingType = "Relative"'>
+                        Relative Timing
+                    </button>
+                    <button type="button"
+                            class="toggle-btn @(ActiveTiming.TimingType == "Specific" ? "active" : "")"
+                            @onclick='() => { ActiveTiming.TimingType = "Specific"; if (!ActiveTiming.SpecificDateTime.HasValue) ActiveTiming.SpecificDateTime = DateTime.Now.AddHours(1); }'>
+                        Specific Date & Time
+                    </button>
+                </div>
+
+                @if (ActiveTiming.TimingType == "Relative")
+                {
+                    <div class="relative-timing-section animate-slide-down">
+                        <label class="form-label-sm">Deliver after:</label>
+                        <div class="timing-row">
+                            <input type="number" @bind="ActiveTiming.RelativeValue" class="form-input timing-val" />
+                            <select @bind="ActiveTiming.RelativeUnit" class="form-select timing-unit-select">
+                                <option value="Minutes">Minutes</option>
+                                <option value="Hours">Hours</option>
+                                <option value="Days">Days</option>
+                                <option value="Weeks">Weeks</option>
+                            </select>
+                            <span class="timing-label">after</span>
+                            <select @bind="ActiveTiming.AfterReference" class="form-select timing-ref-select">
+                                <option value="After Last Activity">After Last Activity</option>
+                                <option value="After Initial Post">After Initial Post</option>
+                                <option value="After Previous Message">After Previous Message</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="specific-timing-section animate-slide-down">
+                        <label class="form-label-sm">Specific Date & Time:</label>
+                        <div class="timing-row">
+                            <input type="datetime-local" 
+                                   class="form-input" 
+                                   value="@(ActiveTiming.SpecificDateTime?.ToString("yyyy-MM-ddTHH:mm"))" 
+                                   @onchange="OnSpecificDateTimeChanged" />
+                        </div>
+                    </div>
+                }
+
+                <div class="timing-divider"></div>
+
+                <div class="completion-limit-section">
+                    <label class="form-label-sm">How many times can the user complete this exercise?</label>
+                    <div class="timing-type-toggle small">
+                        <button type="button"
+                                class="toggle-btn @(ActiveTiming.CompletionType == "Once" ? "active" : "")"
+                                @onclick='() => ActiveTiming.CompletionType = "Once"'>
+                            Once
+                        </button>
+                        <button type="button"
+                                class="toggle-btn @(ActiveTiming.CompletionType == "Daily" ? "active" : "")"
+                                @onclick='() => ActiveTiming.CompletionType = "Daily"'>
+                            Daily
+                        </button>
+                        <button type="button"
+                                class="toggle-btn @(ActiveTiming.CompletionType == "Weekly" ? "active" : "")"
+                                @onclick='() => { ActiveTiming.CompletionType = "Weekly"; if (!ActiveTiming.RecurrenceDays.Any()) ActiveTiming.RecurrenceDays.Add("Monday"); }'>
+                            Weekly
+                        </button>
+                        <button type="button"
+                                class="toggle-btn @(ActiveTiming.CompletionType == "Custom" ? "active" : "")"
+                                @onclick='() => ActiveTiming.CompletionType = "Custom"'>
+                            Custom
+                        </button>
+                    </div>
+                </div>
+
+                @if (ActiveTiming.CompletionType == "Weekly")
+                {
+                    <div class="recurrence-section animate-slide-down" style="margin-top: 16px;">
+                        <label class="form-label">Repeat every</label>
+                        <select class="form-select" @onchange='e => { ActiveTiming.RecurrenceDays.Clear(); ActiveTiming.RecurrenceDays.Add(e.Value?.ToString() ?? "Monday"); }'>
+                            <option value="Monday" selected="@(ActiveTiming.RecurrenceDays.Contains("Monday"))">Monday</option>
+                            <option value="Tuesday" selected="@(ActiveTiming.RecurrenceDays.Contains("Tuesday"))">Tuesday</option>
+                            <option value="Wednesday" selected="@(ActiveTiming.RecurrenceDays.Contains("Wednesday"))">Wednesday</option>
+                            <option value="Thursday" selected="@(ActiveTiming.RecurrenceDays.Contains("Thursday"))">Thursday</option>
+                            <option value="Friday" selected="@(ActiveTiming.RecurrenceDays.Contains("Friday"))">Friday</option>
+                            <option value="Saturday" selected="@(ActiveTiming.RecurrenceDays.Contains("Saturday"))">Saturday</option>
+                            <option value="Sunday" selected="@(ActiveTiming.RecurrenceDays.Contains("Sunday"))">Sunday</option>
+                        </select>
+                    </div>
+                }
+
+                @if (ActiveTiming.CompletionType == "Custom")
+                {
+                    <div class="recurrence-section animate-slide-down" style="margin-top: 16px;">
+                        <label class="form-label">Repeat on these days</label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                            @foreach (var day in new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" })
+                            {
+                                var isDaySelected = ActiveTiming.RecurrenceDays.Contains(day);
+                                <button type="button"
+                                        class="btn-day-toggle @(isDaySelected ? "active" : "")"
+                                        style="padding: 6px 12px;"
+                                        @onclick='() => { if (isDaySelected) ActiveTiming.RecurrenceDays.Remove(day); else ActiveTiming.RecurrenceDays.Add(day); }'>
+                                    @day.Substring(0, 3)
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label-sm">Expiration Date</label>
+                    <input type="date"
+                           value="@(ActiveTiming.ExpirationDate?.ToString("yyyy-MM-dd"))"
+                           @onchange="OnExpirationDateChanged"
+                           class="form-input date-picker-premium @(HasTimingValidationError ? "input-error" : "")" />
+                    @if (HasTimingValidationError)
+                    {
+                        <div class="validation-error" style="color: var(--error-color, #ef4444); font-size: 12px; margin-top: 4px;">
+                            Expiration Date must be on or after the Specific Date & Time.
+                        </div>
+                    }
+                </div>
+                <div class="timing-divider"></div>
+
+                <div class="caregivers-section">
+                    <div class="caregivers-header">
+                        <div class="caregivers-title-group">
+                            <h4>Notification recipients &mdash; Family unit</h4>
+                            <p>
+                                Choose which parents or caregivers should receive this exercise notification.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="notif-time-section">
+                        <div class="notif-time-label">Notification time</div>
+                        <div class="timing-type-toggle">
+                            <button type="button" class="toggle-btn @(ActiveTiming.NotificationTime == "None" ? "active" : "")" @onclick='() => ActiveTiming.NotificationTime = "None"'>None</button>
+                            <button type="button" class="toggle-btn @(ActiveTiming.NotificationTime == "Morning" ? "active" : "")" @onclick='() => ActiveTiming.NotificationTime = "Morning"'>☀️ Morning</button>
+                            <button type="button" class="toggle-btn @(ActiveTiming.NotificationTime == "After school" ? "active" : "")" @onclick='() => ActiveTiming.NotificationTime = "After school"'>🏫 After school</button>
+                            <button type="button" class="toggle-btn @(ActiveTiming.NotificationTime == "Bedtime" ? "active" : "")" @onclick='() => ActiveTiming.NotificationTime = "Bedtime"'>🌙 Bedtime</button>
+                            <button type="button" class="toggle-btn @(ActiveTiming.NotificationTime == "Custom" ? "active" : "")" @onclick='() => ActiveTiming.NotificationTime = "Custom"'>Custom time</button>
+                        </div>
+                    </div>
+
+                    <div class="notif-time-section">
+                        <div class="notif-time-label">Assigned to</div>
+                        <p class="form-helper-text">
+                            Who can complete this. <em>Any caregiver</em> = first to act counts. <em>Specific</em> = appears only on chosen caregivers' homepages.
+                        </p>
+                        <div class="timing-type-toggle">
+                            <button type="button" class="toggle-btn @(ActiveTiming.AudienceMode == "any" ? "active" : "")" @onclick='() => SetAudienceMode("any")'>Any caregiver</button>
+                            <button type="button" class="toggle-btn @(ActiveTiming.AudienceMode == "specific" ? "active" : "")" @onclick='() => SetAudienceMode("specific")'>Specific caregivers</button>
+                        </div>
+                    </div>
+
+                    @if (ActiveTiming.AudienceMode == "specific")
+                    {
+                        <div class="caregivers-list">
+                            @if (AvailableCaregivers != null)
+                            {
+                                @foreach (var cg in AvailableCaregivers.GroupBy(c => c.Id).Select(g => g.First()))
+                                {
+                                    var isSelected = ActiveTiming.SelectedCaregiverIds.Contains(cg.Id);
+                                    <div class="caregiver-row @(isSelected ? "selected" : "")"
+                                         @onclick="() => ToggleTimingCaregiverSelection(cg.Id)">
+                                        <div class="caregiver-row-content">
+                                            <div class="caregiver-checkbox-container">
+                                                <input type="checkbox"
+                                                       checked="@isSelected"
+                                                       @onclick:stopPropagation="true"
+                                                       @onchange="() => ToggleTimingCaregiverSelection(cg.Id)" />
+                                            </div>
+                                            <div class="caregiver-avatar @(cg.Role == "Primary" ? "primary" : "secondary")">
+                                                @cg.Initials
+                                            </div>
+                                            <div class="caregiver-info-body">
+                                                <div class="caregiver-meta-row">
+                                                    <span class="caregiver-name">@cg.Name</span>
+                                                    <span class="caregiver-relation">@cg.Relation</span>
+                                                    @if (cg.Role == "Primary")
+                                                    {
+                                                        <span class="caregiver-badge primary">
+                                                            Primary
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="caregiver-badge secondary">
+                                                            Secondary
+                                                        </span>
+                                                    }
+                                                    <span class="caregiver-badge home">
+                                                        @(cg.Role == "Primary" ? "Home 1" : "Home 2")
+                                                    </span>
+                                                </div>
+                                                <div class="caregiver-subtext">
+                                                    Access: @cg.Access &middot; Own login &middot; <span class="caregiver-timezone">@cg.TimeZone</span> &middot; @cg.Stream
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button type="button" @onclick:stopPropagation="true" class="caregiver-edit-btn">
+                                            Edit
+                                        </button>
+                                    </div>
+                                }
+                            }
+
+                            @if (AvailableCaregivers != null && AvailableCaregivers.Count > 0 && (ActiveTiming.SelectedCaregiverIds == null || !ActiveTiming.SelectedCaregiverIds.Any()))
+                            {
+                                <div class="caregiver-warning-msg" style="margin-top: 10px; color: #ef4444; font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; background: #fef2f2; border: 1px solid #fca5a5; padding: 10px 12px; border-radius: 8px;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink: 0;">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    At least one parent/caregiver should be selected for notifications.
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn-modal-secondary" @onclick="HandleClose">Close</button>
+                <button type="button" class="btn-modal-primary" @onclick="HandleSave" disabled="@HasTimingValidationError">Save Settings</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<TimingSettings> OnSave { get; set; }
+    [Parameter] public string TargetName { get; set; } = "";
+    [Parameter] public TimingSettings ActiveTiming { get; set; } = new();
+    [Parameter] public List<AssignExerciseDrawer.CaregiverInfo> AvailableCaregivers { get; set; } = new();
+    [Parameter] public EventCallback OnLoadCaregiversRequested { get; set; }
+
+    private bool HasTimingValidationError => ActiveTiming.TimingType == "Specific" && 
+                                             ActiveTiming.SpecificDateTime.HasValue && 
+                                             ActiveTiming.ExpirationDate.HasValue && 
+                                             ActiveTiming.ExpirationDate.Value.Date < ActiveTiming.SpecificDateTime.Value.Date;
+
+    protected override void OnParametersSet()
+    {
+        if (IsOpen)
+        {
+            var cgSummary = AvailableCaregivers != null && AvailableCaregivers.Any()
+                ? string.Join(", ", AvailableCaregivers.Select(c => $"[Id={c.Id}, Name='{c.Name}', Role={c.Role}]"))
+                : "None";
+            var selectedIds = ActiveTiming.SelectedCaregiverIds != null ? string.Join(", ", ActiveTiming.SelectedCaregiverIds) : "empty";
+
+            Console.WriteLine($"[caregivers-section] OnParametersSet: IsOpen=True, Target='{TargetName}', AvailableCaregivers ({AvailableCaregivers?.Count ?? 0}): {cgSummary} | AudienceMode='{ActiveTiming.AudienceMode}' | SelectedCaregiverIds=[{selectedIds}]");
+            EnsureTimingCaregiversSelected();
+        }
+    }
+
+    private async Task SetAudienceMode(string mode)
+    {
+        Console.WriteLine($"[caregivers-section] SetAudienceMode requested: '{mode}' (current='{ActiveTiming.AudienceMode}', availableCaregivers count={AvailableCaregivers?.Count ?? 0})");
+        ActiveTiming.AudienceMode = mode;
+        if (mode == "any")
+        {
+            ActiveTiming.SelectedCaregiverIds.Clear();
+            Console.WriteLine("[caregivers-section] AudienceMode set to 'any'. Cleared SelectedCaregiverIds.");
+        }
+        else
+        {
+            if (AvailableCaregivers == null || !AvailableCaregivers.Any())
+            {
+                if (OnLoadCaregiversRequested.HasDelegate)
+                {
+                    Console.WriteLine("[caregivers-section] AvailableCaregivers is empty in specific mode. Invoking OnLoadCaregiversRequested...");
+                    await OnLoadCaregiversRequested.InvokeAsync();
+                }
+            }
+            if (AvailableCaregivers != null && AvailableCaregivers.Any())
+            {
+                // When switching from "Any caregiver" to "Specific caregivers", select all caregivers by default
+                ActiveTiming.SelectedCaregiverIds = AvailableCaregivers
+                    .Select(c => c.Id)
+                    .Distinct()
+                    .ToList();
+                Console.WriteLine($"[caregivers-section] AudienceMode set to 'specific'. Default-selected all available caregivers: [{string.Join(", ", ActiveTiming.SelectedCaregiverIds)}]");
+            }
+        }
+    }
+
+    private void ToggleTimingCaregiverSelection(int id)
+    {
+        if (ActiveTiming.SelectedCaregiverIds == null)
+        {
+            ActiveTiming.SelectedCaregiverIds = new List<int>();
+        }
+
+        bool wasSelected = ActiveTiming.SelectedCaregiverIds.Contains(id);
+        if (wasSelected)
+        {
+            ActiveTiming.SelectedCaregiverIds.Remove(id);
+        }
+        else
+        {
+            ActiveTiming.SelectedCaregiverIds.Add(id);
+        }
+        Console.WriteLine($"[caregivers-section] Toggle caregiver ID={id}: wasSelected={wasSelected} -> nowSelected={!wasSelected}. Current selections=[{string.Join(", ", ActiveTiming.SelectedCaregiverIds)}]");
+    }
+
+    private void EnsureTimingCaregiversSelected()
+    {
+        if (ActiveTiming.SelectedCaregiverIds == null)
+        {
+            ActiveTiming.SelectedCaregiverIds = new List<int>();
+        }
+
+        // When specific caregivers are assigned or specific mode is requested, directly show "Specific caregivers" mode
+        if (ActiveTiming.SelectedCaregiverIds.Any() || ActiveTiming.AudienceMode == "specific")
+        {
+            ActiveTiming.AudienceMode = "specific";
+        }
+
+        if (AvailableCaregivers != null && AvailableCaregivers.Any())
+        {
+            if (ActiveTiming.AudienceMode == "specific")
+            {
+                // Filter to valid caregivers in AvailableCaregivers
+                var validCaregiverIds = ActiveTiming.SelectedCaregiverIds
+                    .Where(id => AvailableCaregivers.Any(c => c.Id == id))
+                    .Distinct()
+                    .ToList();
+
+                if (validCaregiverIds.Any())
+                {
+                    ActiveTiming.SelectedCaregiverIds = validCaregiverIds;
+                }
+                else
+                {
+                    // In specific mode but no matching caregiver selected yet, select all available caregivers by default
+                    ActiveTiming.SelectedCaregiverIds = AvailableCaregivers.Select(c => c.Id).Distinct().ToList();
+                }
+                Console.WriteLine($"[caregivers-section] EnsureTimingCaregiversSelected (specific): SelectedCaregiverIds=[{string.Join(", ", ActiveTiming.SelectedCaregiverIds)}]");
+            }
+            else
+            {
+                ActiveTiming.AudienceMode = "any";
+                ActiveTiming.SelectedCaregiverIds.Clear();
+                Console.WriteLine("[caregivers-section] EnsureTimingCaregiversSelected (any): SelectedCaregiverIds cleared.");
+            }
+        }
+        else
+        {
+            // Caregivers are still loading or empty: preserve the assigned mode and selection
+            if (ActiveTiming.AudienceMode == "specific" || ActiveTiming.SelectedCaregiverIds.Any())
+            {
+                ActiveTiming.AudienceMode = "specific";
+            }
+            else
+            {
+                ActiveTiming.AudienceMode = "any";
+            }
+            Console.WriteLine($"[caregivers-section] EnsureTimingCaregiversSelected (empty caregivers): Mode='{ActiveTiming.AudienceMode}', SelectedCaregiverIds=[{string.Join(", ", ActiveTiming.SelectedCaregiverIds)}]");
+        }
+    }
+
+    private void OnSpecificDateTimeChanged(ChangeEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(e.Value?.ToString()))
+        {
+            ActiveTiming.SpecificDateTime = null;
+            return;
+        }
+
+        if (DateTime.TryParse(e.Value!.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ||
+            DateTime.TryParse(e.Value!.ToString(), out parsed))
+        {
+            ActiveTiming.SpecificDateTime = parsed;
+        }
+    }
+
+    private void OnExpirationDateChanged(ChangeEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(e.Value?.ToString()))
+        {
+            ActiveTiming.ExpirationDate = null;
+            return;
+        }
+
+        if (DateTime.TryParse(e.Value!.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed) ||
+            DateTime.TryParse(e.Value!.ToString(), out parsed))
+        {
+            ActiveTiming.ExpirationDate = parsed;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task HandleSave()
+    {
+        if (ActiveTiming.TimingType == "Specific" && !ActiveTiming.SpecificDateTime.HasValue)
+        {
+            NotificationService.Error("Validation Error", "Please select a specific date and time.");
+            return;
+        }
+
+        if (HasTimingValidationError)
+        {
+            NotificationService.Error("Validation Error", "Expiration Date must be on or after the Scheduled Date.");
+            return;
+        }
+
+        if (ActiveTiming.AudienceMode == "specific" && AvailableCaregivers.Count > 0 && (ActiveTiming.SelectedCaregiverIds == null || !ActiveTiming.SelectedCaregiverIds.Any()))
+        {
+            NotificationService.Error("Validation Error", "At least one parent/caregiver must be selected.");
+            return;
+        }
+
+        if (ActiveTiming.AudienceMode == "any" && ActiveTiming.SelectedCaregiverIds != null)
+        {
+            ActiveTiming.SelectedCaregiverIds.Clear();
+        }
+
+        if (OnSave.HasDelegate)
+        {
+            await OnSave.InvokeAsync(ActiveTiming);
+        }
+    }
+}

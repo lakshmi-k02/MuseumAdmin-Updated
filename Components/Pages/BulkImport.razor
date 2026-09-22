@@ -1,0 +1,1219 @@
+@page "/bulk-import"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using MuseumAdmin.Models
+@using MuseumAdmin.Services
+@using MuseumAdmin.Components.Shared
+@using System.Text
+@using System.Text.Json
+
+@attribute [Authorize]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@implements IDisposable
+
+@inject BulkExerciseImportService ImportService
+@inject AppState AppState
+@inject IJSRuntime JS
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+
+<div class="fade-in">
+    <TopBar Title="Bulk Exercise & Module Import" ShowButton="false" />
+
+    <div class="content-container bulk-import-content">
+
+        <!-- Navigation Return Bar -->
+        <div class="nav-return-bar">
+            <a href="/connect" class="btn-back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                <span>Back to Content Management</span>
+            </a>
+        </div>
+
+        <!-- Top Hero Banner -->
+        <div class="page-hero">
+            <div class="hero-text">
+                <h1>
+                    <span>📥</span> Memby Bulk Exercise & Module Importer
+                </h1>
+                <p>
+                    Recursively parses all sheets in the Excel workbook, creating each sheet as a dedicated Module (Step 1),
+                    and creating each row as an Exercise under that module (Step 2) via the Memby API.
+                </p>
+                <div style="margin-top: 8px; font-size: 13px; opacity: 0.95; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                    <span>🏛️ <strong>Target Museum ID:</strong> @(AppState.MuseumId > 0 ? AppState.MuseumId : 28)</span>
+                    @if (workbook != null)
+                    {
+                        <span>📄 <strong>Loaded File:</strong> @workbook.FileName (@workbook.TotalModules sheets, @workbook.TotalExercises exercises)</span>
+                    }
+                </div>
+            </div>
+
+            <div class="hero-actions">
+                <!-- Upload from local drive -->
+                <label class="btn-primary-gradient file-upload-label" title="Upload an Excel workbook from your computer">
+                    <InputFile OnChange="HandleFileUpload" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" disabled="@(ImportService.IsImportRunning || isLoadingFile)" />
+                    @if (isLoadingFile)
+                    {
+                        <span>⏳ Parsing Excel...</span>
+                    }
+                    else
+                    {
+                        <span>📁 Upload Excel from Computer</span>
+                    }
+                </label>
+
+                @if (workbook != null)
+                {
+                    @if (!ImportService.IsImportRunning)
+                    {
+                        <button type="button" class="btn-secondary-white" style="background: #10b981; border-color: #059669; font-weight: 700;" @onclick="StartBulkImportAsync" disabled="@(SelectedSheetsCount == 0)">
+                            🚀 Import to API (@SelectedExercisesCount Exercises)
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-secondary-white" @onclick="() => ImportService.TogglePause()">
+                            @(ImportService.IsPaused ? "▶️ Resume" : "⏸️ Pause")
+                        </button>
+                        <button type="button" class="btn-secondary-white" style="background: rgba(239, 68, 68, 0.4); border-color: #ef4444;" @onclick="() => ImportService.CancelImport()">
+                            🛑 Cancel Import
+                        </button>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- Persistent File Selector & Status Bar -->
+        <div class="file-status-bar">
+            <div class="file-status-info">
+                @if (workbook != null)
+                {
+                    <span class="file-icon-badge">📊</span>
+                    <div>
+                        <div class="file-name-main">@workbook.FileName</div>
+                        <div class="file-meta-sub">
+                            @(workbook.FileSizeBytes > 0 ? $"{workbook.FileSizeBytes / 1024} KB • " : "")
+                            @workbook.TotalModules Sheets (Modules) • @workbook.TotalExercises Exercises Loaded
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <span class="file-icon-badge">⚠️</span>
+                    <div>
+                        <div class="file-name-main">No Excel Workbook Loaded</div>
+                        <div class="file-meta-sub">Select an Excel (.xlsx) file from your local drive to preview and import exercises.</div>
+                    </div>
+                }
+            </div>
+
+            <div class="file-status-actions">
+                <!-- Global Active / Draft Toggle -->
+                <div class="active-draft-toggle-group" title="Set the default target status for exercises in the workbook">
+                    <span class="toggle-group-label">Set All:</span>
+                    <button type="button" class="btn-toggle-option @(globalStatusMode == "Active" ? "active-selected" : "")" @onclick='() => SetGlobalActiveStatus(true)'>
+                        🟢 Active
+                    </button>
+                    <button type="button" class="btn-toggle-option @(globalStatusMode == "Draft" ? "draft-selected" : "")" @onclick='() => SetGlobalActiveStatus(false)'>
+                        ⚪ Draft
+                    </button>
+                </div>
+
+                <label class="btn-file-action primary" title="Browse and upload a new .xlsx file">
+                    <InputFile OnChange="HandleFileUpload" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" disabled="@(ImportService.IsImportRunning || isLoadingFile)" />
+                    <span>📂 Choose Different .xlsx File</span>
+                </label>
+                <button type="button" class="btn-file-action secondary" @onclick="LoadDefaultLocalFileAsync" disabled="@(ImportService.IsImportRunning || isLoadingFile)">
+                    ⚡ Load Default Library File
+                </button>
+            </div>
+        </div>
+
+        <!-- Metrics Summary Cards -->
+        @if (workbook != null)
+        {
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-icon indigo">📚</div>
+                    <div class="metric-body">
+                        <span class="metric-label">Total Modules (Sheets)</span>
+                        <span class="metric-value">@workbook.TotalModules</span>
+                        <span class="metric-sub">@SelectedSheetsCount sheets selected</span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon blue">📝</div>
+                    <div class="metric-body">
+                        <span class="metric-label">Total Exercises</span>
+                        <span class="metric-value">@workbook.TotalExercises</span>
+                        <span class="metric-sub">
+                            <strong style="color: #15803d;">@workbook.TotalActiveExercises Active</strong> • 
+                            <strong style="color: #475569;">@workbook.TotalDraftExercises Draft</strong>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-icon amber">🖼️</div>
+                    <div class="metric-body">
+                        <span class="metric-label">Media Flagged</span>
+                        <span class="metric-value">@workbook.TotalFlaggedForMedia</span>
+                        <span class="metric-sub">Requires manual asset upload</span>
+                    </div>
+                </div>
+
+                <div class="metric-card @(TotalFailedExercises > 0 ? "has-failures-card" : "")" style="@(TotalFailedExercises > 0 ? "cursor: pointer;" : "")" @onclick='() => { if (TotalFailedExercises > 0 || workbook.TotalValidationErrors > 0) activeMainTab = "failures"; }' title="@(TotalFailedExercises > 0 ? "Click to view Failed Exercises & Manual Entry Guide" : "")">
+                    <div class="metric-icon @(TotalFailedExercises > 0 ? "red" : "green")">
+                        @(TotalFailedExercises > 0 ? "❌" : "✅")
+                    </div>
+                    <div class="metric-body">
+                        <span class="metric-label">Execution Results</span>
+                        <span class="metric-value">@TotalSucceededExercises <span style="font-size: 13px; font-weight: 500; color: #64748b;">success</span></span>
+                        <span class="metric-sub @(TotalFailedExercises > 0 ? "text-danger-bold" : "")">
+                            @if (TotalFailedExercises > 0)
+                            {
+                                <span>⚠️ <strong>@TotalFailedExercises failed</strong> (Click to view)</span>
+                            }
+                            else
+                            {
+                                <span>0 failures</span>
+                            }
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            @if (ImportService.IsImportRunning || TotalSucceededExercises > 0 || TotalFailedExercises > 0)
+            {
+                <!-- Progress Card -->
+                <div class="progress-card">
+                    <div class="progress-header">
+                        <div class="progress-title">
+                            @if (ImportService.IsImportRunning)
+                            {
+                                <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+                                <span>Importing exercises in real-time...</span>
+                            }
+                            else
+                            {
+                                <span>Import Status Overview</span>
+                            }
+                        </div>
+                        <div class="progress-stats">
+                            @TotalSucceededExercises / @SelectedExercisesCount completed (@OverallProgressPercentage%)
+                            @if (TotalFailedExercises > 0)
+                            {
+                                <span class="badge-danger-pill" style="margin-left: 8px;">@TotalFailedExercises Failed</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: @(OverallProgressPercentage)%;"></div>
+                    </div>
+                </div>
+            }
+
+            <!-- View Navigation Switcher -->
+            <div class="view-mode-tabs-container">
+                <div class="view-mode-tabs">
+                    <button type="button" class="view-mode-tab @(activeMainTab == "all" ? "active" : "")" @onclick='() => activeMainTab = "all"'>
+                        <span>📁</span> Modules & Exercises Explorer (@workbook.TotalExercises)
+                    </button>
+                    <button type="button" class="view-mode-tab @(activeMainTab == "failures" ? "active" : "") @(TotalFailedExercises > 0 ? "has-failures" : "")" @onclick='() => activeMainTab = "failures"'>
+                        <span>❌</span> Failures & Manual Add Center
+                        @if (TotalFailedExercises > 0 || workbook.TotalValidationErrors > 0)
+                        {
+                            <span class="failure-counter-pill">@(TotalFailedExercises + workbook.TotalValidationErrors)</span>
+                        }
+                    </button>
+                </div>
+
+                @if (activeMainTab == "failures" && (TotalFailedExercises > 0 || workbook.TotalValidationErrors > 0))
+                {
+                    <div class="failures-top-actions">
+                        @if (!ImportService.IsImportRunning && TotalFailedExercises > 0)
+                        {
+                            <button type="button" class="btn-action-sm retry-btn" @onclick="RetryAllFailedAsync">
+                                🔄 Retry All Failed (@TotalFailedExercises)
+                            </button>
+                        }
+                        <button type="button" class="btn-action-sm export-btn" @onclick="ExportFailuresAsCsvAsync">
+                            📥 Export Failures (CSV)
+                        </button>
+                        <button type="button" class="btn-action-sm copy-btn" @onclick="CopyFailuresSummaryAsync">
+                            📋 Copy Failures Summary
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <!-- Tab 1: All Modules & Exercises Workspace -->
+            @if (activeMainTab == "all")
+            {
+                <div class="main-workspace">
+
+                    <!-- Left Column: Sheets List -->
+                    <div class="sheets-panel">
+                        <div class="sheets-panel-header">
+                            <span class="sheets-panel-title">Sheets / Modules (@workbook.Sheets.Count)</span>
+                            <div class="sheets-panel-actions">
+                                <button type="button" class="btn-small-link" @onclick="SelectAllSheets">Select All</button>
+                                <button type="button" class="btn-small-link" @onclick="DeselectAllSheets">Deselect</button>
+                            </div>
+                        </div>
+
+                        <div class="sheets-list">
+                            @foreach (var sheet in workbook.Sheets)
+                            {
+                                <div class="sheet-item @(activeSheet == sheet ? "active" : "")" @onclick="() => SetActiveSheet(sheet)">
+                                    <div class="sheet-left">
+                                        <input type="checkbox" @bind="sheet.IsSelected" @onclick:stopPropagation="true" />
+                                        <span class="sheet-status-dot @(sheet.Status.ToString().ToLower())" title="Status: @sheet.Status"></span>
+                                        <span class="sheet-name" title="@sheet.SheetName">@sheet.SheetName</span>
+                                    </div>
+                                    <span class="sheet-badge">@sheet.Exercises.Count ex</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Exercises Table -->
+                    <div class="exercises-panel">
+                        @if (activeSheet != null)
+                        {
+                            <div class="panel-header-row">
+                                <div class="panel-title-area">
+                                    <h2>@activeSheet.ModuleName</h2>
+                                    @if (!string.IsNullOrWhiteSpace(activeSheet.ModuleDescription))
+                                    {
+                                        <p class="panel-desc">@activeSheet.ModuleDescription</p>
+                                    }
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <!-- Sheet Level Status Batch Toggles -->
+                                    <div class="sheet-status-actions">
+                                        <button type="button" class="btn-sheet-status active" @onclick="() => SetSheetActiveStatus(activeSheet, true)" title="Set all exercises in this module to Active">
+                                            🟢 All Active (@activeSheet.Exercises.Count(e => e.IsActive))
+                                        </button>
+                                        <button type="button" class="btn-sheet-status draft" @onclick="() => SetSheetActiveStatus(activeSheet, false)" title="Set all exercises in this module to Draft">
+                                            ⚪ All Draft (@activeSheet.Exercises.Count(e => !e.IsActive))
+                                        </button>
+                                    </div>
+
+                                    @if (!ImportService.IsImportRunning)
+                                    {
+                                        <button type="button" class="btn-primary" @onclick="() => ImportSingleSheetAsync(activeSheet)">
+                                            ⚡ Import This Sheet Only (@activeSheet.Exercises.Count ex)
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Search & Filters -->
+                            <div class="filter-bar">
+                                <input type="text" class="search-input" placeholder="🔍 Search exercises by title, tag, or description..." @bind="searchQuery" @bind:event="oninput" />
+                                
+                                <select class="filter-select" @bind="targetStatusFilter">
+                                    <option value="">All Statuses (Active & Draft)</option>
+                                    <option value="Active">🟢 Active Only (@(activeSheet.Exercises.Count(e => e.IsActive)))</option>
+                                    <option value="Draft">⚪ Draft Only (@(activeSheet.Exercises.Count(e => !e.IsActive)))</option>
+                                </select>
+
+                                <select class="filter-select" @bind="pillarFilter">
+                                    <option value="">All Pillars</option>
+                                    <option value="Connect">Connect</option>
+                                    <option value="Grow">Grow</option>
+                                    <option value="Calm">Calm</option>
+                                    <option value="Notice">Notice</option>
+                                    <option value="Ground">Ground</option>
+                                    <option value="Anchor">Anchor</option>
+                                </select>
+
+                                <select class="filter-select" @bind="responseTypeFilter">
+                                    <option value="">All Types</option>
+                                    <option value="Timer">Timer</option>
+                                    <option value="Text">Written response (Text)</option>
+                                    <option value="Y/N response">Yes / No</option>
+                                    <option value="Likert Scale">Likert 1-5</option>
+                                    <option value="NoResponse">Photo / Video (NoResponse)</option>
+                                </select>
+
+                                <label style="font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; color: #475569;">
+                                    <input type="checkbox" @bind="onlyFlaggedMedia" />
+                                    <span>Media Flagged Only</span>
+                                </label>
+                            </div>
+
+                            <!-- Exercises Table -->
+                            <div class="table-responsive">
+                                <table class="custom-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 50px;">#</th>
+                                            <th style="width: 90px;">Pillar</th>
+                                            <th>Exercise Name & Description</th>
+                                            <th style="width: 140px;">Response Type</th>
+                                            <th>Completion Prompt (Q1 & Q2)</th>
+                                            <th style="width: 120px;">Media / Tags</th>
+                                            <th style="width: 105px;">Target Mode</th>
+                                            <th style="width: 100px;">Import Status</th>
+                                            <th style="width: 75px;">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @{ var filteredExercises = GetFilteredExercises(activeSheet); }
+                                        @if (!filteredExercises.Any())
+                                        {
+                                            <tr>
+                                                <td colspan="9" style="text-align: center; padding: 30px; color: #64748b;">
+                                                    No exercises match your search filters.
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var ex in filteredExercises)
+                                            {
+                                                <tr>
+                                                    <td><strong>@ex.RowNumber</strong></td>
+                                                    <td>
+                                                        <span class="pillar-badge @ex.Pillar">@ex.Pillar</span>
+                                                    </td>
+                                                    <td>
+                                                        <div style="font-weight: 600; color: #0f172a; margin-bottom: 4px;">@ex.ExerciseName</div>
+                                                        <div style="font-size: 11px; color: #64748b; line-height: 1.4; max-height: 60px; overflow: hidden; text-overflow: ellipsis;">
+                                                             @ex.ExerciseDescription
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <span class="response-type-badge @GetResponseTypeCss(ex.MappedResponseType)">
+                                                            @ex.MappedResponseType
+                                                        </span>
+                                                        @if (ex.MappedResponseType == "Likert Scale")
+                                                        {
+                                                            <div style="font-size: 10px; color: #b45309; margin-top: 3px;">
+                                                                Satisfaction (1-5)
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <!-- Primary Question -->
+                                                        <div style="font-size: 12px; margin-bottom: 4px;">
+                                                            <span style="font-weight: 600; color: #4f46e5;">Q1:</span> @ex.CompletionActionDirections
+                                                        </div>
+                                                        <!-- Secondary Question if present -->
+                                                        @if (ex.SecondaryQuestion != null)
+                                                        {
+                                                            <div style="font-size: 11px; color: #7e22ce; background: #faf5ff; padding: 4px 6px; border-radius: 4px; border: 1px solid #f3e8ff;">
+                                                                <span style="font-weight: 600;">Q2 (Text):</span> @ex.SecondaryQuestion.QuestionText
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <!-- Media Badge -->
+                                                        <div style="margin-bottom: 6px;">
+                                                            <span class="media-badge @(ex.IsFlaggedForMedia ? "has-media" : "")">
+                                                                @(ex.IsFlaggedForMedia ? "⚠️ " : "📄 ") @ex.MediaType
+                                                            </span>
+                                                        </div>
+                                                        <!-- Tags Chips -->
+                                                        <div class="tag-chips">
+                                                            @foreach (var tag in ex.Tags.Take(3))
+                                                            {
+                                                                <span class="tag-chip">@tag</span>
+                                                            }
+                                                            @if (ex.Tags.Count > 3)
+                                                            {
+                                                                <span class="tag-chip" title="@string.Join(", ", ex.Tags.Skip(3))">+@(ex.Tags.Count - 3)</span>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <!-- Interactive Active/Draft Toggle Pill -->
+                                                        <button type="button" class="btn-status-toggle-pill @(ex.IsActive ? "active" : "draft")" @onclick="() => ToggleExerciseActive(ex)" title="Click to toggle Active (Published) vs Draft (Unpublished)">
+                                                            <span class="status-dot-sm"></span>
+                                                            <span>@(ex.IsActive ? "Active" : "Draft")</span>
+                                                        </button>
+                                                    </td>
+                                                    <td>
+                                                        <span class="status-badge @(ex.Status.ToString().ToLower())">
+                                                            @ex.Status
+                                                            @if (ex.CreatedAutoId.HasValue)
+                                                            {
+                                                                <span>(#@ex.CreatedAutoId)</span>
+                                                            }
+                                                        </span>
+                                                        @if (ex.Status == ImportStatus.Failed && !string.IsNullOrWhiteSpace(ex.ErrorMessage))
+                                                        {
+                                                            <div style="font-size: 10.5px; color: #b91c1c; margin-top: 3px; max-width: 140px; word-break: break-word;" title="@ex.ErrorMessage">
+                                                                ⚠️ @(ex.ErrorMessage.Length > 40 ? ex.ErrorMessage.Substring(0, 40) + "..." : ex.ErrorMessage)
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <button type="button" class="btn-small-link" @onclick="() => OpenPayloadInspector(ex, activeSheet)">
+                                                            🔍 Inspect
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- Tab 2: Failures & Manual Add Action Center -->
+            @if (activeMainTab == "failures")
+            {
+                var failedItems = workbook.GetFailedItems();
+
+                <div class="failures-center-container fade-in">
+                    @if (!failedItems.Any())
+                    {
+                        <div class="failures-empty-state">
+                            <div class="empty-icon-large">🎉</div>
+                            <h3>No Import Failures Detected</h3>
+                            <p>
+                                All modules and exercises from the workbook are currently valid or have succeeded without errors.
+                                If you experience any failures during API execution, they will be tracked here with detailed error explanations and manual entry assistance.
+                            </p>
+                            <button type="button" class="btn-secondary" @onclick='() => activeMainTab = "all"'>
+                                Return to All Modules & Exercises
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Failure Alert Banner -->
+                        <div class="failure-hero-alert">
+                            <div class="alert-icon">⚠️</div>
+                            <div class="alert-body">
+                                <h4>@failedItems.Count Item@(failedItems.Count > 1 ? "s" : "") Failed or Require Attention</h4>
+                                <p>
+                                    The items below were either rejected by the API or have pre-import validation issues.
+                                    You can review the exact <strong>Module</strong>, <strong>Exercise Name</strong>, and <strong>Why it failed</strong>, retry them, or copy the formatted fields to manually enter them into the Module Builder.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Failures Grouped by Module -->
+                        var groupedFailures = failedItems.GroupBy(f => f.ModuleName).ToList();
+
+                        @foreach (var group in groupedFailures)
+                        {
+                            var firstItem = group.First();
+                            var currentSheet = firstItem.SheetRef;
+                            bool isModuleCreated = currentSheet?.CreatedModuleId > 0;
+
+                            <div class="failure-module-card">
+                                <div class="failure-module-header">
+                                    <div class="module-title-group">
+                                        <span class="module-folder-icon">📂</span>
+                                        <div>
+                                            <h3 class="module-title">
+                                                @group.Key
+                                                <span class="sheet-name-tag">Sheet: @firstItem.SheetName</span>
+                                            </h3>
+                                            <div class="module-status-line">
+                                                @if (isModuleCreated)
+                                                {
+                                                    <span class="badge-module-status success">✅ Module Created (ID: @currentSheet!.CreatedModuleId)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge-module-status failed">❌ Module Not Created / Failed in Step 1</span>
+                                                }
+                                                <span class="badge-error-count">@group.Count() failed exercise@(group.Count() > 1 ? "s" : "") in this module</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="module-header-actions">
+                                        @if (currentSheet != null && !ImportService.IsImportRunning)
+                                        {
+                                            <button type="button" class="btn-action-sm retry-btn" @onclick="() => RetrySheetFailuresAsync(currentSheet)">
+                                                🔄 Retry Module & Exercises
+                                            </button>
+                                        }
+                                    </div>
+                                </div>
+
+                                <!-- Failed Items Table for this Module -->
+                                <div class="failure-table-wrapper">
+                                    <table class="failure-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 60px;">Row #</th>
+                                                <th style="width: 100px;">Pillar / Type</th>
+                                                <th style="width: 240px;">Exercise Name & Description</th>
+                                                <th>Prompts (Q1 & Q2)</th>
+                                                <th style="width: 260px;">Why It Failed (Reason)</th>
+                                                <th style="width: 170px;">Manual Add & Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in group)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <span class="row-number-badge">Row @item.RowNumber</span>
+                                                    </td>
+                                                    <td>
+                                                        <div style="margin-bottom: 4px;">
+                                                            <span class="pillar-badge @item.Pillar">@item.Pillar</span>
+                                                        </div>
+                                                        <span class="response-type-badge @GetResponseTypeCss(item.MappedResponseType)">
+                                                            @item.MappedResponseType
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div class="failed-ex-name">@item.ExerciseName</div>
+                                                        <div class="failed-ex-desc">@item.ExerciseDescription</div>
+                                                        @if (item.Tags.Any())
+                                                        {
+                                                            <div class="tag-chips" style="margin-top: 4px;">
+                                                                @foreach (var t in item.Tags.Take(2))
+                                                                {
+                                                                    <span class="tag-chip">@t</span>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <div class="prompt-box-primary">
+                                                            <strong>Q1 Directions:</strong> @item.CompletionDirections
+                                                        </div>
+                                                        @if (!string.IsNullOrWhiteSpace(item.SecondaryPrompt))
+                                                        {
+                                                            <div class="prompt-box-secondary">
+                                                                <strong>Q2 Follow-up:</strong> @item.SecondaryPrompt
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <div class="error-reason-callout">
+                                                            <div class="error-icon-inline">⚠️</div>
+                                                            <div class="error-text-content">
+                                                                <strong>Failure Reason:</strong>
+                                                                <div class="error-msg-detail">@item.ErrorReason</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div class="failure-row-actions">
+                                                            @if (item.ExerciseRef != null && item.SheetRef != null && !ImportService.IsImportRunning)
+                                                            {
+                                                                <button type="button" class="btn-cell-action retry" title="Retry importing this exercise" @onclick="() => RetrySingleExerciseAsync(item.ExerciseRef, item.SheetRef)">
+                                                                    🔄 Retry
+                                                                </button>
+                                                            }
+                                                            <button type="button" class="btn-cell-action copy" title="Copy formatted text to easily paste into Module Builder" @onclick="() => CopyManualAddDetailsAsync(item)">
+                                                                📋 Copy Details
+                                                            </button>
+                                                            @if (item.ExerciseRef != null)
+                                                            {
+                                                                <button type="button" class="btn-cell-action inspect" title="Inspect raw JSON request and error response" @onclick="() => OpenFailureInspector(item)">
+                                                                    🔍 JSON
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            <!-- Upload Box when no file loaded -->
+            <div class="upload-card">
+                <div class="upload-content">
+                    <div class="upload-icon">📊</div>
+                    <h3 class="upload-title">Choose an Excel Workbook (.xlsx)</h3>
+                    <p class="upload-subtitle">
+                        Upload any Excel file containing exercise sheets or load the pre-bundled library to preview, validate, and recursively import modules and exercises.
+                    </p>
+                    <div class="upload-buttons">
+                        <label class="btn-primary file-upload-label" style="display: inline-block;">
+                            <InputFile OnChange="HandleFileUpload" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" />
+                            <span>📁 Browse Excel File</span>
+                        </label>
+                        <button type="button" class="btn-secondary" @onclick="LoadDefaultLocalFileAsync" disabled="@isLoadingFile">
+                            ⚡ Quick Load Workspace Library
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Real-time Live Log Console -->
+        @if (workbook != null)
+        {
+            <div class="log-console-container">
+                <div class="console-header">
+                    <div class="console-title">
+                        <span>💻</span> Live API Execution Terminal
+                    </div>
+
+                    <!-- Log Filter Buttons -->
+                    <div class="console-filter-group">
+                        <button type="button" class="console-filter-btn @(logFilter == "all" ? "active" : "")" @onclick='() => logFilter = "all"'>
+                            All (@ImportService.Logs.Count)
+                        </button>
+                        <button type="button" class="console-filter-btn error @(logFilter == "error" ? "active" : "")" @onclick='() => logFilter = "error"'>
+                            ❌ Errors Only (@(ImportService.Logs.Count(l => l.Level == ImportLogLevel.Error)))
+                        </button>
+                        <button type="button" class="console-filter-btn warning @(logFilter == "warning" ? "active" : "")" @onclick='() => logFilter = "warning"'>
+                            ⚠️ Warnings (@(ImportService.Logs.Count(l => l.Level == ImportLogLevel.Warning)))
+                        </button>
+                        <button type="button" class="console-filter-btn success @(logFilter == "success" ? "active" : "")" @onclick='() => logFilter = "success"'>
+                            ✅ Success (@(ImportService.Logs.Count(l => l.Level == ImportLogLevel.Success)))
+                        </button>
+                    </div>
+
+                    <div class="console-actions">
+                        @if (ImportService.Logs.Any(l => l.Level == ImportLogLevel.Error))
+                        {
+                            <button type="button" class="btn-console error-copy-btn" @onclick="CopyErrorLogsToClipboardAsync">
+                                ❌ Copy Error Logs
+                            </button>
+                        }
+                        <button type="button" class="btn-console" @onclick="CopyLogsToClipboardAsync">📋 Copy Filtered</button>
+                        <button type="button" class="btn-console" @onclick="() => ImportService.ClearLogs()">🗑️ Clear</button>
+                    </div>
+                </div>
+
+                <div class="console-body" id="logConsoleBody">
+                    @{
+                        var filteredLogs = GetFilteredLogs();
+                    }
+                    @if (!filteredLogs.Any())
+                    {
+                        <div style="color: #64748b; padding: 10px;">
+                            @(logFilter == "all" ? "Waiting for import actions... Click 'Import to API' or 'Import This Sheet' to execute live API calls." : $"No {logFilter} logs found.")
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var log in filteredLogs.TakeLast(300))
+                        {
+                            <div class="log-line @(log.Level.ToString().ToLower())">
+                                <span class="log-time">@log.Timestamp.ToString("HH:mm:ss.fff")</span>
+                                @if (!string.IsNullOrWhiteSpace(log.SheetName))
+                                {
+                                    <span class="log-sheet-tag">[@log.SheetName]</span>
+                                }
+                                <span class="log-msg">@log.Message</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Payload & Error Inspector Modal -->
+        @if (inspectedExercise != null)
+        {
+            <div class="modal-overlay" @onclick="ClosePayloadInspector">
+                <div class="modal-card" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h3 class="modal-title">🔍 Exercise Details & API Inspector — @inspectedExercise.ExerciseName</h3>
+                        <button type="button" class="btn-small-link" style="font-size: 18px;" @onclick="ClosePayloadInspector">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Failure reason callout if failed -->
+                        @if (inspectedExercise.Status == ImportStatus.Failed || !string.IsNullOrWhiteSpace(inspectedExercise.ErrorMessage))
+                        {
+                            <div class="modal-error-alert">
+                                <strong>⚠️ API Error Reason:</strong>
+                                <div style="margin-top: 4px;">@(inspectedExercise.ErrorMessage ?? "Unspecified error")</div>
+                            </div>
+                        }
+
+                        <div class="inspector-section-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span>Generated Request Payload for <code>POST /CreateMessage</code>:</span>
+                            <button type="button" class="btn-status-toggle-pill @(inspectedExercise.IsActive ? "active" : "draft")" @onclick="() => ToggleExerciseActive(inspectedExercise)" title="Click to toggle Active/Draft for this exercise payload">
+                                <span class="status-dot-sm"></span>
+                                <span>Target: @(inspectedExercise.IsActive ? "Active (Published)" : "Draft (Unpublished)") (Click to Toggle)</span>
+                            </button>
+                        </div>
+                        <pre class="json-preview-box">@GetInspectedPayloadJson()</pre>
+
+                        @if (!string.IsNullOrWhiteSpace(inspectedExercise.LastResponseJson))
+                        {
+                            <div class="inspector-section-label" style="margin-top: 14px;">Raw Server Response:</div>
+                            <pre class="json-preview-box response-box">@inspectedExercise.LastResponseJson</pre>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-secondary" @onclick="CopyInspectedManualAddAsync">📋 Copy Manual Add Template</button>
+                        <button type="button" class="btn-secondary" @onclick="CopyInspectedPayloadAsync">📋 Copy Request JSON</button>
+                        <button type="button" class="btn-primary" @onclick="ClosePayloadInspector">Close</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+    </div>
+</div>
+
+@code {
+    private BulkImportWorkbook? workbook;
+    private BulkImportSheet? activeSheet;
+    private BulkImportExercise? inspectedExercise;
+    private BulkImportSheet? inspectedSheet;
+
+    private string activeMainTab = "all"; // "all" or "failures"
+    private string logFilter = "all"; // "all", "error", "warning", "success"
+
+    private bool isLoadingFile = false;
+    private string searchQuery = "";
+    private string targetStatusFilter = ""; // "", "Active", "Draft"
+    private string pillarFilter = "";
+    private string responseTypeFilter = "";
+    private bool onlyFlaggedMedia = false;
+    private string globalStatusMode = "Active"; // "Active", "Draft"
+
+    private void SetGlobalActiveStatus(bool active)
+    {
+        globalStatusMode = active ? "Active" : "Draft";
+        if (workbook == null) return;
+        foreach (var s in workbook.Sheets)
+        {
+            foreach (var e in s.Exercises)
+            {
+                e.IsActive = active;
+            }
+        }
+        StateHasChanged();
+    }
+
+    private void SetSheetActiveStatus(BulkImportSheet? sheet, bool active)
+    {
+        if (sheet == null) return;
+        foreach (var e in sheet.Exercises)
+        {
+            e.IsActive = active;
+        }
+        StateHasChanged();
+    }
+
+    private void ToggleExerciseActive(BulkImportExercise ex)
+    {
+        ex.IsActive = !ex.IsActive;
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+
+        ImportService.OnLogAdded += HandleLogAdded;
+        ImportService.OnProgressChanged += HandleProgressChanged;
+
+        // Auto load local workbook on first visit for convenience
+        await LoadDefaultLocalFileAsync();
+    }
+
+    private void HandleLogAdded(ImportLogEntry log)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleProgressChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ImportService.OnLogAdded -= HandleLogAdded;
+        ImportService.OnProgressChanged -= HandleProgressChanged;
+    }
+
+    private async Task LoadDefaultLocalFileAsync()
+    {
+        try
+        {
+            isLoadingFile = true;
+            StateHasChanged();
+
+            var basePath = HostEnvironment.ContentRootPath ?? Directory.GetCurrentDirectory();
+            var filePath = Path.Combine(basePath, "Memby_Exercise_Library_For_Upload (3).xlsx");
+
+            if (File.Exists(filePath))
+            {
+                using var stream = File.OpenRead(filePath);
+                var fileInfo = new FileInfo(filePath);
+                workbook = ImportService.ParseWorkbook(stream, fileInfo.Name, fileInfo.Length);
+                activeSheet = workbook.Sheets.FirstOrDefault();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading workbook: {ex}");
+            await JS.InvokeVoidAsync("showToast", $"Failed to load workbook: {ex.Message}", "error");
+        }
+        finally
+        {
+            isLoadingFile = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            isLoadingFile = true;
+            StateHasChanged();
+
+            var file = e.File;
+            if (file != null)
+            {
+                using var ms = new MemoryStream();
+                await file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(ms);
+                ms.Position = 0;
+
+                workbook = ImportService.ParseWorkbook(ms, file.Name, file.Size);
+                activeSheet = workbook.Sheets.FirstOrDefault();
+                activeMainTab = "all";
+
+                await JS.InvokeVoidAsync("showToast", $"Loaded {workbook.TotalModules} modules and {workbook.TotalExercises} exercises from {file.Name}!", "success");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error reading uploaded file: {ex}");
+            await JS.InvokeVoidAsync("showToast", $"Failed to read Excel file: {ex.Message}", "error");
+        }
+        finally
+        {
+            isLoadingFile = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetActiveSheet(BulkImportSheet sheet)
+    {
+        activeSheet = sheet;
+    }
+
+    private void SelectAllSheets()
+    {
+        if (workbook == null) return;
+        foreach (var s in workbook.Sheets) s.IsSelected = true;
+    }
+
+    private void DeselectAllSheets()
+    {
+        if (workbook == null) return;
+        foreach (var s in workbook.Sheets) s.IsSelected = false;
+    }
+
+    private int SelectedSheetsCount => workbook?.Sheets.Count(s => s.IsSelected) ?? 0;
+    private int SelectedExercisesCount => workbook?.Sheets.Where(s => s.IsSelected).Sum(s => s.Exercises.Count) ?? 0;
+    private int TotalSucceededExercises => workbook?.TotalSucceededExercises ?? 0;
+    private int TotalFailedExercises => workbook?.TotalFailedExercises ?? 0;
+
+    private int OverallProgressPercentage
+    {
+        get
+        {
+            int total = SelectedExercisesCount;
+            if (total == 0) return 0;
+            int done = TotalSucceededExercises + TotalFailedExercises;
+            return Math.Min(100, (int)Math.Round((double)done / total * 100.0));
+        }
+    }
+
+    private IEnumerable<BulkImportExercise> GetFilteredExercises(BulkImportSheet sheet)
+    {
+        var list = sheet.Exercises.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            var q = searchQuery.Trim();
+            list = list.Where(e =>
+                e.ExerciseName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                e.ExerciseDescription.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                e.Tags.Any(t => t.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                e.CompletionActionDirections.Contains(q, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetStatusFilter))
+        {
+            bool wantActive = targetStatusFilter.Equals("Active", StringComparison.OrdinalIgnoreCase);
+            list = list.Where(e => e.IsActive == wantActive);
+        }
+
+        if (!string.IsNullOrWhiteSpace(pillarFilter))
+        {
+            list = list.Where(e => e.Pillar.Equals(pillarFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(responseTypeFilter))
+        {
+            list = list.Where(e => e.MappedResponseType.Equals(responseTypeFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (onlyFlaggedMedia)
+        {
+            list = list.Where(e => e.IsFlaggedForMedia);
+        }
+
+        return list;
+    }
+
+    private IEnumerable<ImportLogEntry> GetFilteredLogs()
+    {
+        return logFilter switch
+        {
+            "error" => ImportService.Logs.Where(l => l.Level == ImportLogLevel.Error),
+            "warning" => ImportService.Logs.Where(l => l.Level == ImportLogLevel.Warning),
+            "success" => ImportService.Logs.Where(l => l.Level == ImportLogLevel.Success),
+            _ => ImportService.Logs
+        };
+    }
+
+    private string GetResponseTypeCss(string type)
+    {
+        return type switch
+        {
+            "Timer" => "timer",
+            "Text" => "text",
+            "Y/N response" => "yn",
+            "Likert Scale" => "likert",
+            "NoResponse" => "noresponse",
+            _ => ""
+        };
+    }
+
+    private async Task StartBulkImportAsync()
+    {
+        if (workbook == null) return;
+        int museumId = AppState.MuseumId > 0 ? AppState.MuseumId : 28;
+        await ImportService.RunImportAsync(workbook, museumId);
+
+        if (workbook.TotalFailedExercises > 0)
+        {
+            activeMainTab = "failures";
+        }
+    }
+
+    private async Task ImportSingleSheetAsync(BulkImportSheet sheet)
+    {
+        int museumId = AppState.MuseumId > 0 ? AppState.MuseumId : 28;
+        await ImportService.ImportSheetAsync(sheet, museumId);
+
+        if (sheet.FailedExercises > 0)
+        {
+            activeMainTab = "failures";
+        }
+    }
+
+    private async Task RetryAllFailedAsync()
+    {
+        if (workbook == null) return;
+        int museumId = AppState.MuseumId > 0 ? AppState.MuseumId : 28;
+        await ImportService.RunRetryFailedAsync(workbook, museumId);
+    }
+
+    private async Task RetrySheetFailuresAsync(BulkImportSheet sheet)
+    {
+        int museumId = AppState.MuseumId > 0 ? AppState.MuseumId : 28;
+        await ImportService.ImportSheetAsync(sheet, museumId);
+    }
+
+    private async Task RetrySingleExerciseAsync(BulkImportExercise exercise, BulkImportSheet sheet)
+    {
+        int museumId = AppState.MuseumId > 0 ? AppState.MuseumId : 28;
+        await ImportService.RetrySingleExerciseAsync(exercise, sheet, museumId);
+    }
+
+    private void OpenPayloadInspector(BulkImportExercise exercise, BulkImportSheet sheet)
+    {
+        inspectedExercise = exercise;
+        inspectedSheet = sheet;
+    }
+
+    private void OpenFailureInspector(FailedImportItem item)
+    {
+        inspectedExercise = item.ExerciseRef;
+        inspectedSheet = item.SheetRef;
+    }
+
+    private void ClosePayloadInspector()
+    {
+        inspectedExercise = null;
+        inspectedSheet = null;
+    }
+
+    private string GetInspectedPayloadJson()
+    {
+        if (inspectedExercise == null) return "{}";
+        int mockModuleId = inspectedSheet?.CreatedModuleId ?? 188;
+        var payload = BulkExerciseImportService.BuildExercisePayload(inspectedExercise, mockModuleId);
+        return JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
+        });
+    }
+
+    private async Task CopyInspectedPayloadAsync()
+    {
+        var json = GetInspectedPayloadJson();
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", json);
+        await JS.InvokeVoidAsync("showToast", "Payload JSON copied to clipboard!", "success");
+    }
+
+    private async Task CopyInspectedManualAddAsync()
+    {
+        if (inspectedExercise == null) return;
+        var sb = new StringBuilder();
+        sb.AppendLine($"Module Name: {inspectedSheet?.ModuleName ?? inspectedExercise.ModuleName}");
+        sb.AppendLine($"Exercise Name: {inspectedExercise.ExerciseName}");
+        sb.AppendLine($"Description: {inspectedExercise.ExerciseDescription}");
+        sb.AppendLine($"Pillar: {inspectedExercise.Pillar}");
+        sb.AppendLine($"Response Type: {inspectedExercise.MappedResponseType}");
+        sb.AppendLine($"Completion Directions (Q1): {inspectedExercise.CompletionActionDirections}");
+        if (inspectedExercise.SecondaryQuestion != null)
+        {
+            sb.AppendLine($"Follow-up Prompt (Q2): {inspectedExercise.SecondaryQuestion.QuestionText}");
+        }
+        sb.AppendLine($"Tags: {string.Join(", ", inspectedExercise.Tags)}");
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+        await JS.InvokeVoidAsync("showToast", "Manual add template copied to clipboard!", "success");
+    }
+
+    private async Task CopyManualAddDetailsAsync(FailedImportItem item)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("========================================");
+        sb.AppendLine("MEMBY EXERCISE MANUAL ENTRY TEMPLATE");
+        sb.AppendLine("========================================");
+        sb.AppendLine($"Module Name: {item.ModuleName}");
+        if (item.ModuleId.HasValue && item.ModuleId.Value > 0)
+        {
+            sb.AppendLine($"Module ID: {item.ModuleId.Value}");
+        }
+        sb.AppendLine($"Excel Row: {item.RowNumber}");
+        sb.AppendLine($"Exercise Name: {item.ExerciseName}");
+        sb.AppendLine($"Description: {item.ExerciseDescription}");
+        sb.AppendLine($"Pillar: {item.Pillar}");
+        sb.AppendLine($"Response Type: {item.MappedResponseType}");
+        sb.AppendLine($"Completion Directions (Q1): {item.CompletionDirections}");
+        if (!string.IsNullOrWhiteSpace(item.SecondaryPrompt))
+        {
+            sb.AppendLine($"Follow-up Prompt (Q2): {item.SecondaryPrompt}");
+        }
+        sb.AppendLine($"Tags: {string.Join(", ", item.Tags)}");
+        sb.AppendLine("----------------------------------------");
+        sb.AppendLine($"Why it failed: {item.ErrorReason}");
+        sb.AppendLine("========================================");
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+        await JS.InvokeVoidAsync("showToast", $"Copied details for '{item.ExerciseName}' to clipboard!", "success");
+    }
+
+    private async Task ExportFailuresAsCsvAsync()
+    {
+        if (workbook == null) return;
+        var failedItems = workbook.GetFailedItems();
+        if (!failedItems.Any())
+        {
+            await JS.InvokeVoidAsync("showToast", "No failed items to export.", "info");
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("\"Sheet Name\",\"Module Name\",\"Module ID\",\"Row #\",\"Exercise Name\",\"Exercise Description\",\"Pillar\",\"Response Type\",\"Completion Directions (Q1)\",\"Follow-up Prompt (Q2)\",\"Tags\",\"Failure Reason\"");
+
+        foreach (var f in failedItems)
+        {
+            sb.AppendLine($"\"{EscapeCsv(f.SheetName)}\",\"{EscapeCsv(f.ModuleName)}\",\"{(f.ModuleId?.ToString() ?? "N/A")}\",\"{f.RowNumber}\",\"{EscapeCsv(f.ExerciseName)}\",\"{EscapeCsv(f.ExerciseDescription)}\",\"{EscapeCsv(f.Pillar)}\",\"{EscapeCsv(f.MappedResponseType)}\",\"{EscapeCsv(f.CompletionDirections)}\",\"{EscapeCsv(f.SecondaryPrompt ?? "")}\",\"{EscapeCsv(string.Join(", ", f.Tags))}\",\"{EscapeCsv(f.ErrorReason)}\"");
+        }
+
+        string fileName = $"Bulk_Import_Failures_{DateTime.UtcNow:yyyyMMdd_HHmmss}.csv";
+        await JS.InvokeVoidAsync("downloadFile", fileName, sb.ToString(), "text/csv;charset=utf-8;");
+        await JS.InvokeVoidAsync("showToast", $"Exported {failedItems.Count} failed items to {fileName}!", "success");
+    }
+
+    private static string EscapeCsv(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        return value.Replace("\"", "\"\"").Replace("\r\n", " ").Replace("\n", " ");
+    }
+
+    private async Task CopyFailuresSummaryAsync()
+    {
+        if (workbook == null) return;
+        var failedItems = workbook.GetFailedItems();
+        if (!failedItems.Any())
+        {
+            await JS.InvokeVoidAsync("showToast", "No failed items found.", "info");
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"# Bulk Import Failures Report — {workbook.FileName}");
+        sb.AppendLine($"*Generated at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC*");
+        sb.AppendLine();
+        sb.AppendLine($"Total Failed Items: **{failedItems.Count}**");
+        sb.AppendLine();
+
+        var grouped = failedItems.GroupBy(f => f.ModuleName);
+        foreach (var g in grouped)
+        {
+            sb.AppendLine($"## Module: {g.Key} (Sheet: {g.First().SheetName})");
+            foreach (var item in g)
+            {
+                sb.AppendLine($"- **Row #{item.RowNumber}: {item.ExerciseName}**");
+                sb.AppendLine($"  - **Pillar / Type:** {item.Pillar} / {item.MappedResponseType}");
+                sb.AppendLine($"  - **Q1 Prompt:** {item.CompletionDirections}");
+                if (!string.IsNullOrWhiteSpace(item.SecondaryPrompt))
+                {
+                    sb.AppendLine($"  - **Q2 Prompt:** {item.SecondaryPrompt}");
+                }
+                sb.AppendLine($"  - **Failure Reason:** `{item.ErrorReason}`");
+                sb.AppendLine();
+            }
+        }
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+        await JS.InvokeVoidAsync("showToast", "Failures summary report copied to clipboard!", "success");
+    }
+
+    private async Task CopyLogsToClipboardAsync()
+    {
+        var logsToCopy = GetFilteredLogs();
+        var allLogs = string.Join("\n", logsToCopy.Select(l => $"[{l.Timestamp:HH:mm:ss.fff}] [{l.Level}] {(string.IsNullOrWhiteSpace(l.SheetName) ? "" : $"[{l.SheetName}] ")}{l.Message}"));
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", allLogs);
+        await JS.InvokeVoidAsync("showToast", "Logs copied to clipboard!", "success");
+    }
+
+    private async Task CopyErrorLogsToClipboardAsync()
+    {
+        var errorLogs = ImportService.Logs.Where(l => l.Level == ImportLogLevel.Error).ToList();
+        var text = string.Join("\n", errorLogs.Select(l => $"[{l.Timestamp:HH:mm:ss.fff}] [ERROR] {(string.IsNullOrWhiteSpace(l.SheetName) ? "" : $"[{l.SheetName}] ")}{l.Message}"));
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        await JS.InvokeVoidAsync("showToast", $"Copied {errorLogs.Count} error logs to clipboard!", "success");
+    }
+}

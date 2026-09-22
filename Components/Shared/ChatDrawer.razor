@@ -1,0 +1,226 @@
+@using MuseumAdmin.Services
+@using MuseumAdmin.Models
+@implements IDisposable
+
+@if (IsVisible)
+{
+    <div class="drawer-overlay" 
+         @onclick="Close"
+         tabindex="-1">
+        <div class="drawer-panel chat-drawer" 
+             @onclick:stopPropagation="true"
+             role="dialog"
+             aria-labelledby="chat-drawer-title"
+             aria-modal="true">
+            
+            <!-- Chat Header -->
+            <div class="drawer-header chat-header">
+                <div class="chat-header-info">
+                    <div class="chat-avatar @AvatarColorClass">
+                        @AvatarInitial
+                    </div>
+                    <div class="chat-title-group">
+                        <h3 id="chat-drawer-title">@Title</h3>
+                        @if (!string.IsNullOrEmpty(Subtitle))
+                        {
+                            <span class="chat-subtitle">@Subtitle</span>
+                        }
+                    </div>
+                </div>
+                <button class="drawer-close-btn" 
+                        @onclick="Close"
+                        aria-label="Close chat">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            
+            <!-- Chat Messages Area -->
+            <div class="drawer-body chat-body" @ref="chatBodyRef">
+                <div class="chat-messages-stack">
+                    @if (Messages != null && Messages.Any())
+                    {
+                    @foreach (var msg in Messages)
+                    {
+                        bool isOutgoing = IsOutgoingMessage(msg);
+
+                            <div class="chat-message-row @(isOutgoing ? "outgoing" : "incoming")">
+                                @if (!isOutgoing)
+                                {
+                                    <div class="message-avatar" title="@(msg.SenderName ?? msg.SenderType)">
+                                        @(string.IsNullOrEmpty(msg.SenderName) ? AvatarInitial : msg.SenderName.Substring(0, 1).ToUpper())
+                                    </div>
+                                }
+
+                                <div class="message-bubble">
+                                    <p>@msg.MessageText</p>
+                                    <span class="message-time">@msg.SentAt.ToLocalTime().ToString("g")</span>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="empty-chat-state">
+                            <div class="empty-icon">💬</div>
+                            <p>No messages yet.</p>
+                            <span>Start the conversation below.</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Chat Input Area -->
+            <div class="chat-input-area">
+                <div class="chat-input-wrapper">
+                    <input type="text" 
+                           class="chat-input-field" 
+                           placeholder="@(IsParticipant ? "Type a message..." : "You are not a participant in this group")" 
+                           @bind="newMessage" 
+                           @bind:event="oninput"
+                           @onkeyup="HandleInputKeyUp"
+                           disabled="@(!IsParticipant)" />
+                    
+                    <button class="chat-send-btn" 
+                            @onclick="SendMessageAsync" 
+                            disabled="@(!IsParticipant || string.IsNullOrWhiteSpace(newMessage))"
+                            aria-label="Send message">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Inject] public ChatService ChatService { get; set; } = default!;
+    [Inject] public IJSRuntime JSRuntime { get; set; } = default!;
+
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    [Parameter] public string Title { get; set; } = "Chat";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string AvatarColorClass { get; set; } = "bg-indigo";
+    [Parameter] public int ChatGroupId { get; set; } // Renamed from ContextId for clarity
+    [Parameter] public string ContextId { get; set; } = ""; // Legacy keeping for compatibility if used elsewhere
+
+    [Parameter] public List<ApiChatMessageDto> Messages { get; set; } = new();
+    [Parameter] public EventCallback<string> OnSendMessage { get; set; }
+    [Parameter] public int CurrentUserId { get; set; }
+    [Parameter] public bool IsParticipant { get; set; } = true;
+    /// <summary>Message IDs typed and sent in this session — always displayed on the right.</summary>
+    [Parameter] public HashSet<int>? LocalSentMessageIds { get; set; }
+
+    private string newMessage = "";
+    private ElementReference chatBodyRef;
+
+    private string AvatarInitial => !string.IsNullOrEmpty(Title) ? Title.Substring(0, 1).ToUpper() : "C";
+
+    private int messageCount;
+    private bool shouldScroll = false;
+
+    private bool IsOutgoingMessage(ApiChatMessageDto msg)
+    {
+        if (msg.MessageId < 0)
+        {
+            return true;
+        }
+
+        if (LocalSentMessageIds != null && LocalSentMessageIds.Contains(msg.MessageId))
+        {
+            return true;
+        }
+
+        return CurrentUserId > 0 && msg.SenderId == CurrentUserId;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Messages != null && Messages.Count != messageCount)
+        {
+            messageCount = Messages.Count;
+            shouldScroll = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (shouldScroll && IsVisible)
+        {
+            shouldScroll = false;
+            await JSRuntime.InvokeVoidAsync("scrollToBottom", chatBodyRef);
+        }
+    }
+
+    /*
+     * Backup: backups/chat-retrieval-20260307/ChatDrawer.razor.bak
+     * Retrieval auto-refresh is intentionally disabled while chat history is rebuilt.
+     *
+    private PeriodicTimer? _refreshTimer;
+    private CancellationTokenSource? _cts;
+
+    [Parameter] public EventCallback OnRefreshRequired { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = StartRefreshTimerAsync(_cts.Token);
+    }
+
+    private async Task StartRefreshTimerAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (await _refreshTimer!.WaitForNextTickAsync(ct))
+            {
+                if (IsVisible && !ct.IsCancellationRequested && OnRefreshRequired.HasDelegate)
+                {
+                    await OnRefreshRequired.InvokeAsync();
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Chat refresh error: {ex.Message}");
+        }
+    }
+    */
+
+    private async Task Close()
+    {
+        IsVisible = false;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private async Task SendMessageAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newMessage)) return;
+
+        var textToSend = newMessage.Trim();
+        newMessage = ""; // Clear input immediately for better UX
+        
+        await OnSendMessage.InvokeAsync(textToSend);
+    }
+
+    private async Task HandleInputKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SendMessageAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        // Retrieval refresh timer intentionally disabled.
+    }
+}

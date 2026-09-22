@@ -1,0 +1,47 @@
+@using System
+@inject NavigationManager NavigationManager
+
+@code {
+    private string currentPath = string.Empty;
+
+    // Keep in sync with the nav items in NavMenu.razor
+    private readonly string[] navRoutes = new[] {
+        "home",
+        "dashboard",
+        "connect",
+        "admin",
+        "voice",
+        "users",
+        "exhibits",
+        "mapping",
+        "prescription"
+    };
+
+    protected override void OnInitialized()
+    {
+        var p = NavigationManager.ToBaseRelativePath(NavigationManager.Uri ?? string.Empty) ?? string.Empty;
+        // normalize, remove trailing slash
+        p = p.Trim('/');
+        currentPath = p;
+    }
+
+    private bool IsInNav()
+    {
+        if (string.IsNullOrEmpty(currentPath)) return false;
+        // check if the requested path starts with any known nav route
+        foreach (var r in navRoutes)
+        {
+            if (currentPath.StartsWith(r, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+}
+
+@if (IsInNav())
+{
+    <UnderConstruction />
+}
+else
+{
+    <NotFound />
+}

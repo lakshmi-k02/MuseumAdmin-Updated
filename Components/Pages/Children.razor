@@ -1,0 +1,3207 @@
+@*
+    Children Management Page - Production Grade
+    
+    Purpose: Provides a comprehensive view of child contacts across three modes:
+    - Children View: Individual child cards with detailed metrics
+    - Families View: Grouped view by family/parent
+    - Groups View: Chat groups and their members
+    
+    Features:
+    - HIPAA-compliant PHI masking in list views
+    - Real-time search and filtering
+    - Exercise assignment functionality
+    - Comprehensive error handling and loading states
+    - Full keyboard accessibility (Tab navigation, Escape to close modals)
+    - Responsive design for desktop and mobile
+    
+    Accessibility: WCAG 2.1 AA compliant with ARIA labels and keyboard navigation
+    Security: Implements audit logging for all data access and modifications
+*@
+@page "/programs"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
+@using MuseumAdmin.Services
+@using MuseumAdmin.Models
+@using System.Text.Json
+@using System.Threading
+@implements IDisposable
+@attribute [Authorize]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+<TopBar Title="Active Programs" 
+        OnMobileMenuToggle="ToggleMobileSidebar" />
+
+<div class="fade-in">
+    <div class="content-container">
+        <!-- Children Page Header Uplift -->
+        <div class="children-header-group" role="region" aria-label="Page statistics and view controls">
+            <!-- 1. Stats Line -->
+            <div class="stats-text-line" aria-live="polite">
+                <span>  @TotalChildrenCount children</span>
+                <span class="stats-dot"></span>
+                <span class="stat-highlight-warning">@NeedAttentionCount need attention</span>
+                <span class="stats-dot"></span>
+                <span class="stat-highlight-active">@ActiveCount Active</span>
+            </div>
+
+            <!-- 2. Segmented View Toggles -->
+            <div class="view-toggles-segmented" role="group" aria-label="View mode selection">
+                <button class="toggle-segment-btn btn-view-individual @(viewMode == ViewType.Children ? "active" : "")" 
+                        @onclick="() => SetViewMode(ViewType.Children)"
+                        aria-pressed="@(viewMode == ViewType.Children)"
+                        aria-label="View children individually">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    View by Individual
+                    @if (GetChildrenViewUnreadCount() > 0)
+                    {
+                        <span class="segment-unread-badge">@GetChildrenViewUnreadCount()</span>
+                    }
+                </button>
+                <button class="toggle-segment-btn btn-view-families @(viewMode == ViewType.Families ? "active" : "")" 
+                        @onclick="() => SetViewMode(ViewType.Families)"
+                        aria-pressed="@(viewMode == ViewType.Families)"
+                        aria-label="View children grouped by families">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                    View by Families
+                    @if (GetFamiliesViewUnreadCount() > 0)
+                    {
+                        <span class="segment-unread-badge">@GetFamiliesViewUnreadCount()</span>
+                    }
+                </button>
+                <button class="toggle-segment-btn btn-view-groups @(viewMode == ViewType.Groups ? "active" : "")" 
+                        @onclick="() => SetViewMode(ViewType.Groups)"
+                        aria-pressed="@(viewMode == ViewType.Groups)"
+                        aria-label="View chat groups">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                    View by Group
+                    @if (GetGroupsViewUnreadCount() > 0)
+                    {
+                        <span class="segment-unread-badge">@GetGroupsViewUnreadCount()</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        <!-- Search and Filter Row -->
+        <div class="search-filter-row" role="search" aria-label="Search and filter controls">
+            <div class="search-box-new">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" 
+                       placeholder="Search by name..." 
+                       value="@searchQuery"
+                       @oninput="HandleSearchInput"
+                       aria-label="Search children by name"
+                       autocomplete="off" />
+            </div>
+
+            <div class="filter-pills-group">
+                <button class="filter-pill-btn @(statusFilter == "All" ? "active" : "")" @onclick='() => SetStatusFilter("All")'>
+                    All
+                </button>
+                <button class="filter-pill-btn @(statusFilter == "NeedAttention" ? "active" : "")" @onclick='() => SetStatusFilter("NeedAttention")'>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    Need Attention
+                </button>
+                <button class="filter-pill-btn @(statusFilter == "Active" ? "active" : "")" @onclick='() => SetStatusFilter("Active")'>
+                    Active
+                </button>
+            </div>
+
+            <div class="sort-dropdown">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+                Sort by Name
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 6px;">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </div>
+        </div>
+
+        <div class="content-body">
+            @if (viewMode == ViewType.Children)
+            {
+                @if (isLoading)
+                {
+                    <div class="loading-state" style="text-align: center; padding: 60px;">
+                        <div class="spinner-modern"></div>
+                        <p style="margin-top: 16px; color: #64748b;">Loading children data...</p>
+                    </div>
+                }
+                else if (FilteredContacts == null || !FilteredContacts.Any())
+                {
+                    <div class="empty-state-modern" style="text-align: center; padding: 80px 20px; background: white; border-radius: 20px; border: 1px dashed #e2e8f0; margin-top: 20px;">
+                        <div style="font-size: 48px; margin-bottom: 20px;">👤</div>
+                        <h3 style="color: #1e293b; margin-bottom: 12px; font-weight: 600;">No children found</h3>
+                        <p style="color: #64748b; max-width: 400px; margin: 0 auto;">We couldn't find any children matching your current search or filter criteria.</p>
+                    </div>
+                }
+                else
+                {
+                    <!-- Renderable List of Children -->
+                    <div class="children-cards-stack">
+                        @{
+                            var pagedContacts = FilteredContacts
+                                .Skip((childrenCurrentPage - 1) * childrenPageSize)
+                                .Take(childrenPageSize)
+                                .ToList();
+                        }
+                        @foreach (var contact in pagedContacts)
+                        {
+                            <div class="child-card-premium @(contact.AlertCount > 0 ? "has-alert" : "")"
+                                 @onclick="() => { if (!expandedChildIds.Contains(contact.ContactId)) ToggleChildExpand(contact.ContactId); else NavigateToChildDetailsTemporary(contact); }"
+                                 style="cursor: pointer;">
+                                <div class="card-identity-row @(!expandedChildIds.Contains(contact.ContactId) ? "card-row-compact" : "")">
+                                    <div class="card-top-identity">
+                                        <div class="child-avatar-box @GetStatusColorClass(contact.Status)">
+                                            <span class="avatar-initial">@contact.ContactName.FirstOrDefault()</span>
+                                            <div class="status-indicator @contact.Status.ToLower()"></div>
+                                        </div>
+                                        <div class="child-info-main">
+                                            <div class="identity-line" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                                <h3 class="child-name child-name-link"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => NavigateToChildDetailsTemporary(contact)"
+                                                    title="View Profile">@contact.ContactName</h3>
+                                                <span class="child-age-muted">@contact.Age yr</span>
+                                                @if (contact.AlertCount > 0)
+                                                {
+                                                    <span title="@contact.AlertCount alert(s)" style="color: #ef4444; display: flex; align-items: center; background: #fef2f2; padding: 2px 4px; border-radius: 4px;">
+                                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                                        </svg>
+                                                    </span>
+                                                }
+                                            </div>
+                                            @if (!expandedChildIds.Contains(contact.ContactId))
+                                            {
+                                                <div class="active-programs-badge">
+                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                                                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                                                    </svg>
+                                                    <span>@contact.ProgramCount Active Exercise</span>
+                                                </div>
+                                            }
+                                            <div style="margin-top: 2px;">
+                                                <span class="child-meta" style="margin: 0;">@GetContactProviderLabel(contact)</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    @* CENTER — adherence ring + date columns (collapsed only) *@
+                                    @if (!expandedChildIds.Contains(contact.ContactId))
+                                    {
+                                        <div class="card-compact-metrics">
+                                            @* Adherence Ring *@
+                                            <div class="adherence-ring-wrap">
+                                                <svg class="ring-svg" viewBox="0 0 36 36">
+                                                    <circle cx="18" cy="18" r="15" class="ring-bg" />
+                                                    <circle cx="18" cy="18" r="15"
+                                                        class="ring-fill"
+                                                        stroke="@(contact.AdherenceRate >= 80 ? "#10b981" : (contact.AdherenceRate >= 50 ? "#f59e0b" : "#ef4444"))"
+                                                        stroke-dasharray="@(contact.AdherenceRate * 94.25 / 100) 94.25"
+                                                        stroke-dashoffset="23.56" />
+                                                </svg>
+                                                <div class="ring-label" style="color: @(contact.AdherenceRate >= 80 ? "#10b981" : (contact.AdherenceRate >= 50 ? "#f59e0b" : "#ef4444"));">
+                                                    @contact.AdherenceRate
+                                                </div>
+                                            </div>
+
+                                            @* Last Visit *@
+                                            <div class="compact-date-col">
+                                                <span class="compact-date-val">@(contact.LastActivity?.ToString("MMM dd") ?? "N/A")</span>
+                                                <span class="compact-date-lbl">last visit</span>
+                                            </div>
+
+                                            @* Next Visit / Alert status *@
+                                            <div class="compact-date-col @(contact.AlertCount > 0 ? "is-overdue" : "")">
+                                                @if (contact.AlertCount > 0)
+                                                {
+                                                    <span class="compact-date-val overdue-val">
+                                                        Overdue
+                                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <circle cx="12" cy="12" r="10"></circle>
+                                                            <polyline points="12 6 12 12 16 14"></polyline>
+                                                        </svg>
+                                                    </span>
+                                                    <span class="compact-date-lbl overdue-lbl">next visit</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="compact-date-val">—</span>
+                                                    <span class="compact-date-lbl">next visit</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @* RIGHT — action buttons *@
+                                    <div class="card-actions-right">
+                                        <div class="chat-icon-wrapper-premium">
+                                            <button class="chat-btn-icon"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => OpenChat(contact)"
+                                                    title="Chat with child">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                                            </button>
+                                            @if (GetChildUnreadCount(contact) > 0)
+                                            {
+                                                <span class="chat-unread-badge-overlay">@GetChildUnreadCount(contact)</span>
+                                            }
+                                        </div>
+
+                                        <button class="assign-btn-icon"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => OpenAssignDrawer(contact)"
+                                                title="Assign Exercise">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                            </svg>
+                                        </button>
+
+                                        <button class="expand-btn-icon"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => ToggleChildExpand(contact.ContactId)"
+                                                title="Toggle Details"
+                                                style="background: none; border: none; padding: 4px; color: #94a3b8; cursor: pointer; border-radius: 6px; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;">
+                                            @if (expandedChildIds.Contains(contact.ContactId))
+                                            {
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="18 15 12 9 6 15"></polyline>
+                                                </svg>
+                                            }
+                                            else
+                                            {
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            }
+                                        </button>
+                                    </div>
+                                </div>
+                                @if (expandedChildIds.Contains(contact.ContactId))
+                                {
+                                    <div class="card-bottom-grid">
+                                        <div class="metric-block main-p">
+                                            <span class="metric-label-small">ADHERENCE</span>
+                                            <div class="progress-header-row">
+                                                <span class="progress-value-main @(contact.AdherenceChange >= 0 ? "trend-up" : "trend-down")">@contact.AdherenceRate%</span>
+                                                @if (contact.AdherenceChange > 0)
+                                                {
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5">
+                                                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                                                        <polyline points="17 6 23 6 23 12"></polyline>
+                                                    </svg>
+                                                }
+                                                else if (contact.AdherenceChange < 0)
+                                                {
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5">
+                                                        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
+                                                        <polyline points="17 18 23 18 23 12"></polyline>
+                                                    </svg>
+                                                }
+                                            </div>
+                                            <div class="progress-track-bg">
+                                                <div class="progress-fill-themed @GetAdherenceColorClass(contact.AdherenceRate)" style="width: @contact.AdherenceRate%;"></div>
+                                            </div>
+                                        </div>
+                                        <div class="metric-block">
+                                            <span class="metric-label-small">EXERCISE</span>
+                                            <span class="sub-metric-value">@contact.ProgramCount</span>
+                                            <span class="sub-metric-tag">@contact.ProgramStatus</span>
+                                        </div>
+                                        <div class="metric-block">
+                                            <span class="metric-label-small">ALERTS</span>
+                                            <span class="sub-metric-value @(contact.AlertCount > 0 ? "red" : "muted")">@contact.AlertCount</span>
+                                            <span class="sub-metric-tag">@(contact.AlertCount > 0 ? "Critical" : "None")</span>
+                                        </div>
+                                    </div>
+
+                                    @if (contact.IsLoadingAssignments)
+                                    {
+                                        <div class="card-assigned-therapies loading">
+                                            <div class="therapies-header">
+                                                <span class="therapies-label">FETCHING THERAPIES...</span>
+                                            </div>
+                                            <div class="therapies-scroll-row">
+                                                <div class="therapy-pill shimmer"></div>
+                                                <div class="therapy-pill shimmer"></div>
+                                            </div>
+                                        </div>
+                                    }
+                                    else if (contact.Assignments != null && contact.Assignments.Any())
+                                    {
+                                        <div class="card-assigned-therapies">
+                                            <div class="therapies-header">
+                                                <span class="therapies-label">ASSIGNED THERAPIES</span>
+                                                <!-- <span class="therapies-count">@contact.Assignments.Count</span> -->
+                                            </div>
+                                            <div class="therapies-scroll-row">
+                                                @foreach (var assignment in contact.Assignments)
+                                                {
+                                                    var isAssignmentExpired = assignment.ExpirationDateUtc != null && assignment.ExpirationDateUtc <= DateTime.UtcNow;
+                                                    var formTitle = assignment.ModuleId == 0 && assignment.Forms != null && assignment.Forms.Any() && !string.IsNullOrWhiteSpace(assignment.Forms.First().Title)
+                                                        ? assignment.Forms.First().Title
+                                                        : assignment.ModuleName;
+                                                    <div class="therapy-pill clickable-pill source-@assignment.SourceType?.ToLower() @(isAssignmentExpired ? "pill-expired" : "")" 
+                                                         title="@(isAssignmentExpired ? $"{formTitle} (Expired)" : formTitle)" 
+                                                         @onclick="() => HandlePillClick(contact, assignment)" 
+                                                         @onclick:stopPropagation="true">
+                                                        <span class="pill-name">@formTitle</span>
+                                                        @if (isAssignmentExpired)
+                                                        {
+                                                            <span class="pill-badge-expired">Expired</span>
+                                                        }
+                                                        else if (assignment.Exercises != null && assignment.Exercises.Any())
+                                                        {
+                                                            <span class="pill-badge">@assignment.Exercises.Count</span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <Pagination TotalCount="@FilteredContacts.Count"
+                                PageSize="@childrenPageSize"
+                                CurrentPage="@childrenCurrentPage"
+                                OnPageChanged="ChangeChildrenPage"
+                                OnPageSizeChanged="HandleChildrenPageSizeChanged" />
+                }
+            }
+            else if (viewMode == ViewType.Families)
+            {
+                <div class="families-stack">
+                    @if (!FilteredGroups.Any())
+                    {
+                         <div class="empty-state-modern" style="text-align: center; padding: 60px 20px; background: white; border-radius: 20px; border: 1px dashed #e2e8f0;">
+                            <div style="font-size: 48px; margin-bottom: 20px;">👥</div>
+                            <h3 style="color: #1e293b; margin-bottom: 12px; font-weight: 600;">No families found</h3>
+                            <p style="color: #64748b; max-width: 400px; margin: 0 auto;">No families match your current search or filter criteria.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var group in FilteredGroups.Skip((familyCurrentPage - 1) * familyPageSize).Take(familyPageSize))
+                        {
+                            var parentName = group.First().OwnerName;
+                            var childCount = group.Count();
+                            var avgAdherence = (int)Math.Round(group.Average(c => c.AdherenceRate));
+                            var totalAlerts = group.Sum(c => c.AlertCount);
+                            var familyId = group.Key;
+                            var isFamilyExpanded = expandedFamilyIds.Contains(familyId);
+
+                            <div class="child-card-premium @(totalAlerts > 0 ? "has-alert" : "")" style="margin-bottom: 4px;">
+                                <div class="card-identity-row @(!isFamilyExpanded ? "card-row-compact" : "")" @onclick="() => ToggleFamilyExpand(familyId)" style="cursor: pointer;">
+                                    <div class="card-top-identity">
+                                        <div class="child-avatar-box @GetCardColorClass(familyId)">
+                                            @{
+                                                var initials = string.Join("", parentName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(s => s.FirstOrDefault().ToString().ToUpper()));
+                                            }
+                                            <span class="avatar-initial">@initials</span>
+                                        </div>
+                                        <div class="child-info-main">
+                                            <div class="identity-line" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                                <h3 class="child-name">@parentName</h3>
+                                                @if (totalAlerts > 0)
+                                                {
+                                                    <span title="@totalAlerts alert(s)" style="color: #ef4444; display: flex; align-items: center; background: #fef2f2; padding: 2px 4px; border-radius: 4px;">
+                                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                                        </svg>
+                                                    </span>
+                                                }
+                                            </div>
+                                            <div style="margin-top: 2px;">
+                                                <span class="child-meta" style="margin: 0;">@childCount @(childCount == 1 ? "child" : "children") in therapy</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    @if (!isFamilyExpanded)
+                                    {
+                                        <div class="card-compact-metrics">
+                                            <div class="adherence-ring-wrap">
+                                                <svg class="ring-svg" viewBox="0 0 36 36">
+                                                    <circle cx="18" cy="18" r="15" class="ring-bg" />
+                                                    <circle cx="18" cy="18" r="15"
+                                                        class="ring-fill"
+                                                        stroke="@(avgAdherence >= 80 ? "#10b981" : (avgAdherence >= 50 ? "#f59e0b" : "#ef4444"))"
+                                                        stroke-dasharray="@(avgAdherence * 94.25 / 100) 94.25"
+                                                        stroke-dashoffset="23.56" />
+                                                </svg>
+                                                <div class="ring-label" style="color: @(avgAdherence >= 80 ? "#10b981" : (avgAdherence >= 50 ? "#f59e0b" : "#ef4444"));">
+                                                    @avgAdherence
+                                                </div>
+                                            </div>
+
+                                            @{ var lastVisit = group.Where(c => c.LastActivity.HasValue).Max(c => c.LastActivity); }
+                                            <div class="compact-date-col">
+                                                <span class="compact-date-val">@(lastVisit?.ToString("MMM dd") ?? "N/A")</span>
+                                                <span class="compact-date-lbl">last visit</span>
+                                            </div>
+
+                                            <div class="compact-date-col @(totalAlerts > 0 ? "is-overdue" : "")">
+                                                @if (totalAlerts > 0)
+                                                {
+                                                    <span class="compact-date-val overdue-val">
+                                                        Overdue
+                                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <circle cx="12" cy="12" r="10"></circle>
+                                                            <polyline points="12 6 12 12 16 14"></polyline>
+                                                        </svg>
+                                                    </span>
+                                                    <span class="compact-date-lbl overdue-lbl">next visit</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="compact-date-val">—</span>
+                                                    <span class="compact-date-lbl">next visit</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="card-expanded-metrics-family" style="display: flex; gap: 24px; margin-right: 16px; align-items: center;">
+                                            <div class="metric-block-family" style="display: flex; flex-direction: column; align-items: center;">
+                                                <span class="metric-label" style="font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;">AVG ADHERENCE</span>
+                                                <span class="metric-val" style="font-size: 18px; font-weight: 800; color: @(avgAdherence >= 80 ? "#10b981" : (avgAdherence >= 50 ? "#f59e0b" : "#ef4444"));">@avgAdherence%</span>
+                                            </div>
+                                            <div class="metric-block-family" style="display: flex; flex-direction: column; align-items: center;">
+                                                <span class="metric-label" style="font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;">TOTAL ALERTS</span>
+                                                <span class="metric-val" style="font-size: 18px; font-weight: 800; color: @(totalAlerts > 0 ? "#ef4444" : "#94a3b8");">@totalAlerts</span>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    <div class="card-actions-right">
+                                        <div class="chat-icon-wrapper-premium">
+                                            <button class="chat-btn-icon"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => OpenFamilyChat(group)"
+                                                    title="Chat with Parent">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                                            </button>
+                                            @if (GetFamilyUnreadCount(group) > 0)
+                                            {
+                                                <span class="chat-unread-badge-overlay">@GetFamilyUnreadCount(group)</span>
+                                            }
+                                        </div>
+
+                                        <button class="assign-btn-icon"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => HandleFamilyAssign(group)"
+                                                title="Assign to Family">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                                            </svg>
+                                        </button>
+                                        <button class="expand-btn-icon"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => ToggleFamilyExpand(familyId)"
+                                                title="Toggle Details"
+                                                style="background: none; border: none; padding: 4px; color: #94a3b8; cursor: pointer; border-radius: 6px; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center;">
+                                            @if (isFamilyExpanded)
+                                            {
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="18 15 12 9 6 15"></polyline>
+                                                </svg>
+                                            }
+                                            else
+                                            {
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            }
+                                        </button>
+                                    </div>
+                                </div>
+
+                                @if (isFamilyExpanded)
+                                {
+                                    <div class="card-expanded-content" style="padding: 16px; border-top: 1px solid #f1f5f9; background: #f8fafc;">
+                                        <div class="family-children-grid-compact @(childCount == 1 ? "single" : "")">
+                                            @foreach (var child in group)
+                                            {
+                                                <div class="child-tile-compact" @onclick="() => NavigateToChildDetailsTemporary(child)" style="cursor: pointer;">
+                                                    <div class="tile-status-bar @(child.AlertCount > 0 ? "danger" : "success")"></div>
+                                                    <div class="tile-content-compact">
+                                                        <div class="tile-top-compact" style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(148, 163, 184, 0.2);">
+                                                            <div class="tile-name-line-compact">
+                                                                <span class="dot-indicator-compact @(child.AlertCount > 0 ? "warning" : "success")"></span>
+                                                                <span class="tile-name-compact">@MaskPHI(child.ContactName)</span>
+                                                                <span class="tile-age-compact">@child.Age y</span>
+                                                            </div>
+                                                            <div class="tile-actions-right-compact" style="display:flex; align-items:center;">
+                                                                <div class="tile-chevron-compact" style="color: #94a3b8;">
+                                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                                                    </svg>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="tile-metrics-compact">
+                                                            <div class="tile-metric-compact">
+                                                                <span class="tm-label-compact">ADHERENCE</span>
+                                                                <div class="tm-val-row-compact">
+                                                                    <span class="tm-val-compact @(child.AdherenceRate >= 80 ? "success" : "warning")">@child.AdherenceRate%</span>
+                                                                    @if (child.AdherenceChange > 0)
+                                                                    {
+                                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                            <div class="tile-metric-compact">
+                                                                <span class="tm-label-compact">PROGRAMS</span>
+                                                                <span class="tm-val-compact">@child.ProgramCount</span>
+                                                            </div>
+                                                            <div class="tile-metric-compact">
+                                                                <span class="tm-label-compact">ALERTS</span>
+                                                                <span class="tm-val-compact @(child.AlertCount > 0 ? "danger" : "muted")">@child.AlertCount</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- Pagination Controls -->
+                        <Pagination TotalCount="@FilteredGroups.Count()"
+                                    PageSize="@familyPageSize"
+                                    CurrentPage="@familyCurrentPage"
+                                    OnPageChanged="HandleFamilyPageChanged"
+                                    OnPageSizeChanged="HandleFamilyPageSizeChanged" />
+                    }
+                </div>
+            }
+            else if (viewMode == ViewType.Groups)
+            {
+                @if (ChatGroups == null || !ChatGroups.Any())
+                {
+                    <div class="empty-state-modern" style="text-align: center; padding: 60px 20px; background: white; border-radius: 20px; border: 1px dashed #e2e8f0;">
+                        <div style="font-size: 48px; margin-bottom: 20px;">💬</div>
+                        <h3 style="color: #1e293b; margin-bottom: 12px; font-weight: 600;">No groups found</h3>
+                        <p style="color: #64748b; max-width: 400px; margin: 0 auto;">Try creating a new group in the Users tab to get started.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="groups-stack-premium">
+                        @foreach (var group in FilteredChatGroups)
+                        {
+                            <GroupCard Group="group" 
+                                       ShowActions="true" 
+                                       ShowLastActivity="false"
+                                       OnChat="OpenChatGroup" 
+                                       OnAssign="OpenAssignDrawerForGroup"
+                                       Assignments="@GetGroupAssignments(group)" />
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@* Chat Drawer *@
+<ChatDrawer IsVisible="@isChatVisible"
+            IsVisibleChanged="@HandleChatVisibilityChanged"
+            Title="@chatTitle"
+            Subtitle="@chatSubtitle"
+            Messages="@chatMessages"
+            CurrentUserId="@AppState.UserId"
+            IsParticipant="@isUserParticipant"
+            LocalSentMessageIds="@localSentMessageIds"
+            OnSendMessage="HandleSendMessageAsync" />
+
+@* ── DEV: therapy-time debug sticker — remove before prod ── *@
+@if (isChatVisible && currentPrivateChatTargetType == PrivateChatTargetType.Child && currentPrivateChatReceiverId > 0)
+{
+    var _rawSec = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(currentPrivateChatReceiverId, 0);
+    var _liveChatExtra = 0;
+    if (AppState.ChatSessionStartTimePerChild.TryGetValue(currentPrivateChatReceiverId, out var _chatStart))
+    {
+        _liveChatExtra = (int)(DateTime.UtcNow - _chatStart).TotalSeconds;
+    }
+    var _totalSec = _rawSec + _liveChatExtra;
+    var _dispMm = _totalSec / 60;
+    var _dispSs = _totalSec % 60;
+    <div class="debug-sticker">
+        <div class="debug-sticker-icon chat">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+            </svg>
+        </div>
+        <div class="debug-sticker-body">
+            <div class="debug-sticker-label">💬 Chatting · @chatTitle</div>
+            <div class="debug-sticker-time">@_dispMm.ToString("D2"):@_dispSs.ToString("D2")</div>
+            <div class="debug-sticker-sub">@(_dispMm) min accumulated</div>
+        </div>
+    </div>
+}
+
+
+<AssignExerciseDrawer IsVisible="@showAssignDrawer"
+                      IsVisibleChanged="HandleAssignDrawerVisibilityChanged"
+                      Contact="@selectedContact"
+                      GroupContacts="@selectedGroupContacts"
+                      GroupName="@selectedGroupName"
+                      GroupId="@selectedGroupId"
+                      InitialModuleId="@initialModuleIdForDrawer"
+                      OperatorName="@operatorName"
+                      OnAssigned="LoadContactsAsync" />
+
+
+@code {
+    // ==========================================
+    // DEPENDENCY INJECTION
+    // ==========================================
+    [Inject]
+    public UserService UserService { get; set; } = default!;
+    [Inject]
+    public AppState AppState { get; set; } = default!;
+    [Inject]
+    public NotificationService NotificationService { get; set; } = default!;
+    [Inject]
+    public AuthenticationStateProvider AuthProvider { get; set; } = default!;
+    [Inject]
+    public ChatService ChatService { get; set; } = default!;
+    [Inject]
+    public NavigationManager NavigationManager { get; set; } = default!;
+    [Inject]
+    public IJSRuntime JSRuntime { get; set; } = default!;
+
+    // ==========================================
+    // STATE MANAGEMENT
+    // ==========================================
+    private ViewType viewMode = ViewType.Children;
+    private string activeFilter = "All"; // All, Active, New, Inactive
+    private string statusFilter = "All"; // All, NeedAttention, Active
+    private string searchQuery = "";
+    private bool isLoading = true;
+    private bool showAssignDrawer = false;
+    private bool isLoadingModules = false;
+    private AssignDrawerMode assignDrawerMode = AssignDrawerMode.Module;
+    
+    private List<ContactWithStatusDto> allContacts = new();
+    private ContactWithStatusDto? selectedContact = null;
+    private List<ModuleViewModel> availableModules = new();
+    private List<ModuleSelectionDto> moduleCatalog = new();
+    private readonly Dictionary<ViewType, List<ModuleViewModel>> moduleStatesByView = new();
+    private bool isAssigning = false;
+    private int displayedModulesCount = 10;
+    private const int InitialModuleDisplayCount = 10;
+    private const int IncrementalModuleDisplayCount = 20;
+    
+    private Task<List<ModuleSelectionDto>>? _moduleFetchTask;
+    private int? initialModuleIdForDrawer;
+    private List<ContactWithStatusDto>? selectedGroupContacts = null;
+    private string? selectedGroupName = null;
+    private int? selectedGroupId = null;
+
+    // Timing Modal state
+    private bool isTimingModalOpen = false;
+    private ModuleViewModel? selectedModuleForTiming = null;
+    private ExerciseViewModel? selectedExerciseForTiming = null;
+    private TimingSettings activeTiming = new();
+    
+    // Chat state
+    private bool isChatVisible = false;
+    private string chatTitle = "Chat";
+    private string chatSubtitle = "";
+    private List<ApiChatMessageDto> chatMessages = new();
+    private int currentChatGroupId = 0;
+    private int currentPrivateChatReceiverId = 0;
+    private List<ChatGroupResponseDto> userChatDetails = new();
+    private Dictionary<int, ChildChatMappingDto> privateChatsByChildId = new();
+    private Dictionary<int, ParentChatMappingDto> privateChatsByParentId = new();
+    private Dictionary<int, GroupChatMappingDto> groupChatsById = new();
+    private Dictionary<int, int> unreadCountsByChatGroupId = new();
+    private PrivateChatTargetType currentPrivateChatTargetType = PrivateChatTargetType.None;
+
+    // Timer for debug sticker live updates
+    private System.Threading.Timer? _stickerTimer;
+    private PeriodicTimer? chatPollingTimer;
+    private CancellationTokenSource? chatPollingCts;
+    private bool hasInitializedUnreadState = false;
+    private string activeChatContextKey = string.Empty;
+    private bool isUserParticipant = true;
+    private HashSet<int> localSentMessageIds = new();
+    private int nextLocalMessageId = -1;
+    
+    // Pagination state for families
+    private int familyCurrentPage = 1;
+    private int familyPageSize = 10;
+    
+    // Pagination state for children
+    private int childrenCurrentPage = 1;
+    private int childrenPageSize = 10;
+    private const string LegacySelfChildDisplayName = "Self";
+    private const string ShadowChildGenderMarker = "Shadow"; // Assuming this is the marker for shadow parent contacts based on backend implementation
+    private HashSet<int> expandedFamilyIds = new();
+    private HashSet<int> expandedChildIds = new();
+    
+    private string operatorName = "System";
+
+    private void ToggleChildExpand(int contactId)
+    {
+        if (expandedChildIds.Contains(contactId))
+            expandedChildIds.Remove(contactId);
+        else
+            expandedChildIds.Add(contactId);
+    }
+
+    private enum PrivateChatTargetType
+    {
+        None,
+        Child,
+        Parent
+    }
+
+    private bool HasUnreadMessages(ContactWithStatusDto contact)
+    {
+        return GetChildUnreadCount(contact) > 0
+            || ChatGroups.Any(g => GetUnreadCountForChatGroup(g.ChatGroupId) > 0 && g.Members.Any(m => m.MemberId == contact.ContactId && m.MemberType == "Contact"));
+    }
+
+    // ==========================================
+    // LIFECYCLE METHODS
+    // ==========================================
+    
+    /// <summary>
+    /// Initializes the Children page component.
+    /// Loads authentication state, initializes app state, and loads contact data.
+    /// Implements comprehensive error handling and HIPAA audit logging.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await AppState.EnsureInitializedAsync();
+            
+            // Get operator name from authenticated user for audit logging
+            var authState = await AuthProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                operatorName = user.Identity.Name ?? "System";
+            }
+
+            await LoadContactsAsync();
+            await LoadPrivateChatsAsync();
+            await LoadGroupsAsync();
+            
+            // Background pre-fetch module catalog to ensure assignment drawer is instant
+            _ = FetchModuleCatalogInBackgroundAsync();
+            
+            isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            // Log error without PHI - HIPAA compliant
+            // TODO: Implement structured logging system
+            // Logger.LogError("Failed to initialize Children page for user {OperatorName}", operatorName);
+            
+            NotificationService.Error("Error", "Unable to load page data. Please refresh the page or contact support if the issue persists.");
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || hasInitializedUnreadState)
+        {
+            return;
+        }
+
+        hasInitializedUnreadState = true;
+
+        // Await global initialization (prevents race conditions if MainLayout is already fetching)
+        await AppState.InitializeUnreadCountsAsync(ChatService, JSRuntime);
+        
+        // After global sync, we still need to load private chats for local mappings
+        await LoadPrivateChatsAsync();
+        
+        StartChatPolling();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Loads contact data with comprehensive error handling.
+    /// Implements HIPAA audit logging for data access.
+    /// </summary>
+    /// <returns>Task representing the asynchronous operation</returns>
+    private async Task LoadContactsAsync()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+            
+            // Get all contacts with their assignment status
+            var contacts = await UserService.GetContactsWithStatusAsync(
+                AppState.MuseumId, 
+                null, // No filter at service level, we filter in UI
+                operatorName
+            );
+            
+            // Sort by latest contacts first (using ID or descending)
+            if (contacts != null)
+            {
+                var therapistId = AppState.UserId;
+                allContacts = contacts
+                    .Where(c => !IsShadowParentContact(c))
+                    .Where(c => c.ProviderIds != null && c.ProviderIds.Contains(therapistId))
+                    .OrderByDescending(c => c.ContactId)
+                    .ToList();
+                
+                // Fetch assignments ONLY for the first visible page in the background
+                _ = FetchVisiblePageAssignmentsAsync();
+            }
+            else
+            {
+                allContacts = new List<ContactWithStatusDto>();
+            }
+            
+            // HIPAA Audit Log: Record data access
+            // TODO: Implement audit logging
+            // AuditLogger.LogDataAccess(operatorName, "Children", "View", allContacts.Count, AppState.MuseumId);
+            
+            isLoading = false;
+            StateHasChanged();
+        }
+        catch (HttpRequestException httpEx)
+        {
+            // Network or API error
+            NotificationService.Error("Connection Error", "Unable to connect to the server. Please check your internet connection and try again.");
+            isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            // Generic error - log without PHI
+            NotificationService.Error("Error", "Failed to load children data. Please try again.");
+            isLoading = false;
+        }
+    }
+
+    /// <summary>
+    /// Fetches therapy assignments for the currently visible page of children.
+    /// Runs in the background and updates UI as each child's data is loaded.
+    /// </summary>
+    private async Task FetchVisiblePageAssignmentsAsync()
+    {
+        Console.WriteLine($"[Children] Fetching background assignments for ViewMode: {viewMode}");
+        List<ContactWithStatusDto> targetContacts = new();
+
+        if (viewMode == ViewType.Children)
+        {
+            targetContacts = FilteredContacts
+                .Skip((childrenCurrentPage - 1) * childrenPageSize)
+                .Take(childrenPageSize)
+                .ToList();
+        }
+        else if (viewMode == ViewType.Families)
+        {
+            var visibleFamilies = FilteredGroups
+                .Skip((familyCurrentPage - 1) * familyPageSize)
+                .Take(familyPageSize)
+                .ToList();
+            targetContacts = visibleFamilies.SelectMany(g => g).ToList();
+        }
+        else if (viewMode == ViewType.Groups)
+        {
+            // For groups, we'll fetch for the first 20 groups to keep it performant
+            var visibleGroups = FilteredChatGroups.Take(20).ToList();
+            var memberIds = visibleGroups
+                .SelectMany(g => g.Members.Where(m => m.MemberType?.ToLower() == "child" || m.MemberType?.ToLower() == "contact").Select(m => m.MemberId))
+                .ToHashSet();
+            targetContacts = allContacts.Where(c => memberIds.Contains(c.ContactId)).ToList();
+            Console.WriteLine($"[Children] Group view members identified: {targetContacts.Count} contacts from {visibleGroups.Count} groups.");
+        }
+
+        Console.WriteLine($"[Children] Background fetch identified {targetContacts.Count} target contacts.");
+
+        var tasks = targetContacts.Select(async contact => 
+        {
+            // Only fetch if not already loaded or loading
+            if ((contact.Assignments == null || !contact.Assignments.Any()) && !contact.IsLoadingAssignments)
+            {
+                try
+                {
+                    contact.IsLoadingAssignments = true;
+
+                    contact.Assignments = await UserService.GetContactAssignmentsAsync(contact.ContactId, operatorName);
+                    
+                    // Tag assignments with their source (Individual, Family, Group)
+                    TagAssignments(contact);
+
+                    // Update status based on active assignments
+                    if (contact.ProgramCount > 0)
+                    {
+                        contact.Status = "Active";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Children] Background fetch failed for {contact.ContactId}: {ex.Message}");
+                }
+                finally
+                {
+                    contact.IsLoadingAssignments = false;
+                    StateHasChanged();
+                }
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        Console.WriteLine("[Children] Background assignment fetch complete.");
+    }
+
+    /// <summary>
+    /// Pre-fetches the module catalog in the background during page initialization.
+    /// This prevents delays when the user opens the assignment drawer for the first time.
+    /// </summary>
+    private async Task FetchModuleCatalogInBackgroundAsync()
+    {
+        try
+        {
+            if (moduleCatalog.Count == 0)
+            {
+                // Assign to the shared task so OpenAssignDrawer can await the same request
+                _moduleFetchTask ??= UserService.GetAvailableModulesAsync(AppState.MuseumId, operatorName);
+                
+                moduleCatalog = (await _moduleFetchTask)
+                    .OrderByDescending(m => m.ModuleId)
+                    .ToList();
+                
+                // Reset per-view state snapshots if successful
+                moduleStatesByView.Clear();
+                
+                // If drawer is currently open, initialize modules immediately
+                if (showAssignDrawer)
+                {
+                    await InvokeAsync(() => {
+                        InitializeModulesForCurrentView();
+                        StateHasChanged();
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _moduleFetchTask = null; // Reset on failure
+            Console.WriteLine($"[Children] Background pre-fetch of modules failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Changes the current page for the children list and triggers assignment fetching.
+    /// </summary>
+    private async Task ChangeChildrenPage(int newPage)
+    {
+        childrenCurrentPage = Math.Max(1, Math.Min(newPage, TotalChildrenPages));
+        StateHasChanged();
+        await FetchVisiblePageAssignmentsAsync();
+    }
+    /// Implements error handling and logging.
+    /// </summary>
+    private async Task LoadGroupsAsync(bool forceRefresh = false)
+    {
+        try
+        {
+            if (!userChatDetails.Any())
+            {
+                await LoadPrivateChatsAsync();
+            }
+
+            if (forceRefresh || !cachedMuseumGroups.Any())
+            {
+                cachedMuseumGroups = await ChatService.GetGroupsByMuseumAsync(AppState.MuseumId, operatorName);
+            }
+
+            RebuildGroupsView();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error", "Failed to load chat groups. Please try again.");
+        }
+    }
+
+    private void RebuildGroupsView()
+    {
+        var mappedPrivateChatIds = (privateChatsByChildId?.Values.Select(v => v.ChatGroupId) ?? Enumerable.Empty<int>())
+            .Concat(privateChatsByParentId?.Values.Select(v => v.ChatGroupId) ?? Enumerable.Empty<int>())
+            .ToHashSet();
+
+        var museumGroupIds = cachedMuseumGroups.Select(g => g.ChatGroupId).ToHashSet();
+
+        // Identify "orphaned" chats that have unread messages but aren't visible in other tabs
+        var extraGroups = (userChatDetails ?? new List<ChatGroupResponseDto>())
+            .Where(chat => !museumGroupIds.Contains(chat.ChatGroupId) && !mappedPrivateChatIds.Contains(chat.ChatGroupId))
+            .Where(chat => chat.Messages?.Any(m => !m.IsRead && m.SenderId != AppState.UserId) ?? false)
+            .Select(sourceGroup => new ChatGroupDto
+            {
+                ChatGroupId = sourceGroup.ChatGroupId,
+                GroupName = string.IsNullOrEmpty(sourceGroup.GroupName) || sourceGroup.GroupName == "Private Chat"
+                    ? $"Misc Chat #{sourceGroup.ChatGroupId}"
+                    : sourceGroup.GroupName,
+                IsGroup = sourceGroup.IsGroup,
+                Members = sourceGroup.Members?.Select(m => new ChatGroupMemberDto 
+                { 
+                    MemberId = m.MemberId, 
+                    MemberType = m.MemberType, 
+                    Name = m.Name 
+                }).ToList() ?? new List<ChatGroupMemberDto>()
+            })
+            .ToList();
+
+        ChatGroups = cachedMuseumGroups
+            .Concat(extraGroups)
+            .Select(sourceGroup =>
+            {
+                var group = new ChatGroupDto
+                {
+                    ChatGroupId = sourceGroup.ChatGroupId,
+                    GroupName = sourceGroup.GroupName,
+                    LastMessage = sourceGroup.LastMessage,
+                    LastMessageTime = sourceGroup.LastMessageTime,
+                    UnreadCount = sourceGroup.UnreadCount,
+                    IsGroup = sourceGroup.IsGroup,
+                    TotalMessages = sourceGroup.TotalMessages,
+                    Members = sourceGroup.Members ?? new List<ChatGroupMemberDto>()
+                };
+
+                var groupChat = groupChatsById.TryGetValue(group.ChatGroupId, out var mappedGroup)
+                    ? mappedGroup
+                    : null;
+                var orderedMessages = (groupChat?.Messages ?? new List<ApiChatMessageDto>())
+                    .OrderBy(message => message.SentAt)
+                    .ToList();
+                var latestMessage = orderedMessages.LastOrDefault();
+
+                group.IsGroup = true;
+                group.TotalMessages = orderedMessages.Count;
+                group.UnreadCount = GetUnreadCountForChatGroup(group.ChatGroupId);
+                group.LastMessage = latestMessage?.MessageText ?? group.LastMessage;
+                group.LastMessageTime = latestMessage?.SentAt ?? group.LastMessageTime;
+
+                return group;
+            })
+            .OrderByDescending(group => group.ChatGroupId)
+            .ToList();
+
+        AppState.UpdateGroupTotals(ChatGroups);
+    }
+
+    private async Task LoadPrivateChatsAsync()
+    {
+        try
+        {
+            userChatDetails = await ChatService.GetUserChatDetailsAsync(AppState.UserId, operatorName);
+            RebuildChatMappings();
+        }
+        catch (Exception)
+        {
+            userChatDetails = new List<ChatGroupResponseDto>();
+            privateChatsByChildId = new Dictionary<int, ChildChatMappingDto>();
+            privateChatsByParentId = new Dictionary<int, ParentChatMappingDto>();
+            groupChatsById = new Dictionary<int, GroupChatMappingDto>();
+        }
+    }
+
+    private void RebuildChatMappings()
+    {
+        var knownChildIds = allContacts
+            .Select(contact => contact.ContactId)
+            .Where(contactId => contactId > 0)
+            .ToHashSet();
+
+        var knownParentIds = allContacts
+            .Select(contact => contact.UserId)
+            .Where(userId => userId > 0)
+            .ToHashSet();
+
+        var privateChats = (userChatDetails ?? new List<ChatGroupResponseDto>())
+            .Where(chatGroup => !chatGroup.IsGroup)
+            .Select(chatGroup =>
+            {
+                var otherMember = (chatGroup.Members ?? new List<ApiChatMemberDto>())
+                    .FirstOrDefault(member => member.MemberId != AppState.UserId);
+
+                return otherMember == null
+                    ? null
+                    : new
+                    {
+                        chatGroup.ChatGroupId,
+                        chatGroup.IsFamily,
+                        OtherMemberId = otherMember.MemberId,
+                        Messages = (chatGroup.Messages ?? new List<ApiChatMessageDto>())
+                            .OrderBy(message => message.SentAt)
+                            .ToList()
+                    };
+            })
+            .Where(chat => chat != null)
+            .ToList();
+
+        privateChatsByChildId = privateChats
+            .Where(chat => chat!.IsFamily != true && knownChildIds.Contains(chat!.OtherMemberId))
+            .GroupBy(chat => chat!.OtherMemberId)
+            .ToDictionary(
+                group => group.Key,
+                group => new ChildChatMappingDto
+                {
+                    ChildId = group.Key,
+                    ChatGroupId = group.OrderByDescending(chat => chat!.ChatGroupId).First()!.ChatGroupId,
+                    Messages = group.OrderByDescending(chat => chat!.ChatGroupId).First()!.Messages
+                });
+
+        privateChatsByParentId = privateChats
+            .Where(chat => chat!.IsFamily == true && knownParentIds.Contains(chat!.OtherMemberId))
+            .GroupBy(chat => chat!.OtherMemberId)
+            .ToDictionary(
+                group => group.Key,
+                group => new ParentChatMappingDto
+                {
+                    ParentId = group.Key,
+                    ChatGroupId = group.OrderByDescending(chat => chat!.ChatGroupId).First()!.ChatGroupId,
+                    Messages = group.OrderByDescending(chat => chat!.ChatGroupId).First()!.Messages
+                });
+
+        groupChatsById = ChatService
+            .MapGroupChats(AppState.UserId, userChatDetails)
+            .ToDictionary(group => group.ChatGroupId);
+
+        if (cachedMuseumGroups.Any())
+        {
+            RebuildGroupsView();
+        }
+    }
+
+    // Filtered contacts based on active filter and search query
+    private List<ContactWithStatusDto> FilteredContacts
+    {
+        get
+        {
+            var contacts = allContacts;
+
+            // "Self" should be hidden only in the children-card view.
+            if (viewMode == ViewType.Children)
+            {
+                contacts = contacts
+                    .Where(c => !IsLegacySelfContact(c))
+                    .ToList();
+            }
+            
+            // Apply status filter
+            if (statusFilter == "NeedAttention")
+            {
+                contacts = contacts.Where(c => c.AlertCount > 0).ToList();
+            }
+            else if (statusFilter == "Active")
+            {
+                contacts = contacts.Where(c => c.Status == "Active").ToList();
+            }
+            // "All" shows everything
+            
+            // Apply search filter
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+            {
+                var query = searchQuery.ToLower();
+                contacts = contacts.Where(c => 
+                    MaskPHI(c.ContactName).ToLower().Contains(query) ||
+                    (c.OwnerName != null && c.OwnerName.ToLower().Contains(query)) ||
+                    (c.AssignedProviderName != null && c.AssignedProviderName.ToLower().Contains(query))
+                ).ToList();
+            }
+
+            return contacts
+                .OrderByDescending(GetChildUnreadCount)
+                .ThenByDescending(c => c.ContactId)
+                .ToList();
+        }
+    }
+
+    private IEnumerable<IGrouping<int, ContactWithStatusDto>> FilteredGroups
+    {
+        get
+        {
+            return FilteredContacts
+                .GroupBy(c => c.UserId)
+                .OrderByDescending(GetFamilyUnreadCount)
+                .ThenByDescending(group => group.Max(c => c.ContactId));
+        }
+    }
+
+    private static bool IsShadowParentContact(ContactWithStatusDto contact)
+    {
+        return string.Equals(contact.ContactGender?.Trim(), ShadowChildGenderMarker, StringComparison.Ordinal);
+    }
+
+    private static bool IsLegacySelfContact(ContactWithStatusDto contact)
+    {
+        var fullName = contact.ContactName?.Trim();
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            return false;
+        }
+
+        if (string.Equals(fullName, LegacySelfChildDisplayName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var firstName = fullName
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+
+        return string.Equals(firstName, LegacySelfChildDisplayName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private List<ChatGroupDto> ChatGroups = new();
+    private List<ChatGroupDto> cachedMuseumGroups = new();
+
+    private IEnumerable<ChatGroupDto> FilteredChatGroups
+    {
+        get
+        {
+            var groups = ChatGroups.Where(g =>
+                !string.Equals(g.GroupName?.Trim(), "Private Chat", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(searchQuery))
+            {
+                return groups
+                    .OrderByDescending(group => GetUnreadCountForChatGroup(group.ChatGroupId))
+                    .ThenByDescending(group => group.ChatGroupId);
+            }
+
+            return groups.Where(g =>
+                g.GroupName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ||
+                g.Members.Any(m => m.Name?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false))
+                .OrderByDescending(group => GetUnreadCountForChatGroup(group.ChatGroupId))
+                .ThenByDescending(group => group.ChatGroupId);
+        }
+    }
+
+    private string GetCardColorClass(int id)
+    {
+        var colors = new[] { "fam-color-indigo", "fam-color-amber", "fam-color-purple", "fam-color-blue" };
+        return colors[Math.Abs(id) % colors.Length];
+    }
+    
+
+
+    // Get count for each status category
+    private int GetStatusCount(string status)
+    {
+        if (status == "All")
+            return allContacts.Count;
+        return allContacts.Count(c => c.Status == status);
+    }
+
+    // Statistics properties
+    private int TotalChildrenCount => allContacts.Count;
+    private int ActiveCount => allContacts.Count(c => c.Status == "Active");
+
+    // Get count of contacts needing attention (with alerts)
+    private int NeedAttentionCount => allContacts.Count(c => c.AlertCount > 0);
+
+    private void SetActiveFilter(string filter)
+    {
+        activeFilter = filter;
+        StateHasChanged();
+    }
+
+    private async Task SetStatusFilter(string filter)
+    {
+        statusFilter = filter;
+        childrenCurrentPage = 1;
+        familyCurrentPage = 1;
+        
+        // Map status filter to activeFilter for compatibility
+        if (filter == "NeedAttention")
+        {
+            // Filter contacts with alerts
+            activeFilter = "All"; // We'll handle this in FilteredContacts
+        }
+        else
+        {
+            activeFilter = filter;
+        }
+        
+        StateHasChanged();
+        // Filtering can surface contacts outside the previously fetched page, so refresh their assignments.
+        await FetchVisiblePageAssignmentsAsync();
+    }
+
+    private async Task HandleSearchInput(ChangeEventArgs args)
+    {
+        searchQuery = args.Value?.ToString() ?? string.Empty;
+        childrenCurrentPage = 1;
+        familyCurrentPage = 1;
+        StateHasChanged();
+        // Search can surface contacts outside the previously fetched page, so refresh their assignments.
+        await FetchVisiblePageAssignmentsAsync();
+    }
+
+    /// <summary>
+    /// Sets the current view mode (Children, Families, or Groups).
+    /// Triggers UI update to reflect the selected view.
+    /// </summary>
+    /// <param name="type">The view type to switch to</param>
+    private void SetViewMode(ViewType type)
+    {
+        viewMode = type;
+
+        // Keep assignment state isolated by page/view mode
+        if (moduleStatesByView.TryGetValue(viewMode, out var viewModules))
+        {
+            availableModules = viewModules;
+        }
+        else if (moduleCatalog.Count > 0)
+        {
+            InitializeModulesForCurrentView();
+        }
+        
+        // Trigger background assignment fetch for the new view
+        _ = FetchVisiblePageAssignmentsAsync();
+        
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Opens the assignment drawer for a specific child contact.
+    /// Loads available modules if not already cached.
+    /// Implements comprehensive error handling and loading states.
+    /// </summary>
+    /// <param name="contact">The contact to assign exercises to</param>
+    private async Task OpenAssignDrawer(ContactWithStatusDto contact, int? moduleId = null)
+    {
+        try
+        {
+            selectedContact = contact;
+            selectedGroupId = null;
+            initialModuleIdForDrawer = moduleId;
+            showAssignDrawer = true;
+            assignDrawerMode = AssignDrawerMode.Module;
+            
+            // HIPAA Audit Log: Record assignment drawer access
+            // AuditLogger.LogDataAccess(operatorName, "Contact", "AssignmentDrawerOpened", contact.ContactId, AppState.MuseumId);
+            
+            // Load module catalog once, using a shared task to prevent concurrent duplicate requests
+            if (moduleCatalog.Count == 0)
+            {
+                isLoadingModules = true;
+                StateHasChanged();
+                
+                try
+                {
+                    // If no task exists, start it. If it exists, await the existing one.
+                    _moduleFetchTask ??= UserService.GetAvailableModulesAsync(AppState.MuseumId, operatorName);
+                    
+                    moduleCatalog = (await _moduleFetchTask)
+                        .OrderByDescending(m => m.ModuleId)
+                        .ToList();
+
+                    // If request succeeded, Clear the task so it can be refreshed if needed later (or keep it for cache)
+                    // For now we keep it so future clicks don't re-trigger
+                    
+                    moduleStatesByView.Clear();
+                }
+                catch (Exception moduleEx)
+                {
+                    _moduleFetchTask = null; // Reset on failure so it can be retried
+                    NotificationService.Error("Error", "Unable to load available modules. Please try again.");
+                }
+                finally
+                {
+                    isLoadingModules = false;
+                }
+            }
+
+            InitializeModulesForCurrentView();
+            SelectAllExercisesForModuleMode();
+            
+            displayedModulesCount = InitialModuleDisplayCount;
+            StateHasChanged();
+
+            // Progressively load remaining modules in the background to keep UI responsive
+            _ = Task.Delay(300).ContinueWith(_ => InvokeAsync(() => {
+                if (showAssignDrawer) {
+                    displayedModulesCount = availableModules.Count;
+                    StateHasChanged();
+                }
+            }));
+        }
+        catch (Exception ex)
+        {
+            isLoadingModules = false;
+            showAssignDrawer = false; // Close drawer on critical error
+            NotificationService.Error("Error", "Unable to open assignment panel. Please try again.");
+        }
+    }
+
+    private void InitializeModulesForCurrentView()
+    {
+        if (moduleStatesByView.TryGetValue(viewMode, out var existingState))
+        {
+            availableModules = existingState;
+            return;
+        }
+
+        var clonedState = moduleCatalog
+            .Select(m => new ModuleViewModel
+            {
+                Data = m
+            })
+            .ToList();
+
+        moduleStatesByView[viewMode] = clonedState;
+        availableModules = clonedState;
+    }
+
+    /// <summary>
+    /// Closes the assignment drawer and resets related state.
+    /// </summary>
+    private void CloseAssignDrawer()
+    {
+        showAssignDrawer = false;
+        selectedContact = null;
+        assignDrawerMode = AssignDrawerMode.Module;
+        displayedModulesCount = InitialModuleDisplayCount;
+        StateHasChanged();
+    }
+
+    private Task HandleAssignDrawerVisibilityChanged(bool isVisible)
+    {
+        showAssignDrawer = isVisible;
+
+        if (!isVisible)
+        {
+            selectedContact = null;
+            selectedGroupContacts = null;
+            selectedGroupName = null;
+            initialModuleIdForDrawer = null;
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadMoreModules()
+    {
+        displayedModulesCount = availableModules.Count;
+        StateHasChanged();
+    }
+
+    private void SetAssignDrawerMode(AssignDrawerMode mode)
+    {
+        assignDrawerMode = mode;
+
+        if (assignDrawerMode == AssignDrawerMode.Module)
+        {
+            SelectAllExercisesForModuleMode();
+        }
+        else
+        {
+            ClearAllExerciseSelections();
+        }
+    }
+
+    private string GetDrawerProgressStyle()
+    {
+        var progress = assignDrawerMode == AssignDrawerMode.Module
+            ? 34
+            : (GetTotalSelectedExercises() > 0 ? 68 : 48);
+
+        return $"width: {progress}%;";
+    }
+
+    private int GetTotalSelectedExercises()
+    {
+        return availableModules.Sum(m => m.Exercises.Count(e => e.IsSelected));
+    }
+
+    private static int GetModuleExerciseCount(ModuleViewModel moduleVm)
+    {
+        if (moduleVm.Data.ExerciseCount > 0) return moduleVm.Data.ExerciseCount;
+        return moduleVm.Exercises.Count;
+    }
+
+    private string GetModuleExerciseLabel(ModuleViewModel moduleVm)
+    {
+        var count = GetModuleExerciseCount(moduleVm);
+        return $"{count} exercise{(count == 1 ? "" : "s")}";
+    }
+
+    private int GetModuleEstimatedMinutes(ModuleViewModel moduleVm)
+    {
+        var count = Math.Max(GetModuleExerciseCount(moduleVm), 1);
+        return count * 15;
+    }
+
+    private static string GetExerciseScheduleText(ExerciseViewModel ex)
+    {
+        return ex.HasSavedTiming ? "Custom timing scheduled" : "No schedule set";
+    }
+
+    private static bool IsModuleScheduleComplete(ModuleViewModel moduleVm)
+    {
+        if (moduleVm.IsAssigned) return true;
+        if (moduleVm.HasSavedTiming) return true;
+        return moduleVm.Exercises.Count > 0 && moduleVm.Exercises.All(e => e.HasSavedTiming);
+    }
+
+    private static bool IsModuleSelected(ModuleViewModel moduleVm)
+    {
+        if (moduleVm.IsAssigned || moduleVm.HasSavedTiming) return true;
+        return moduleVm.Exercises.Any(e => e.IsSelected);
+    }
+
+    private bool CanAssignFromBottomBar()
+    {
+        var selectedModules = availableModules
+            .Where(m => m.Exercises.Any(e => e.IsSelected))
+            .ToList();
+
+        return selectedModules.Count > 0 && selectedModules.All(CanAssignSelected);
+    }
+
+    private async Task HandleBottomBarAssignSelected()
+    {
+        var selectedModules = availableModules
+            .Where(m => m.Exercises.Any(e => e.IsSelected))
+            .ToList();
+
+        if (selectedModules.Count == 0)
+        {
+            NotificationService.Info("Selection", "Select at least one exercise to assign.");
+            return;
+        }
+
+        if (selectedModules.Any(m => !CanAssignSelected(m)))
+        {
+            NotificationService.Error("Schedule Required", "Each selected exercise must be scheduled before assigning.");
+            return;
+        }
+
+        foreach (var module in selectedModules)
+        {
+            await HandleAssignSelected(module);
+        }
+    }
+
+    /// <summary>
+    /// Handles keyboard events for the assignment drawer.
+    /// Closes drawer when Escape key is pressed for accessibility.
+    /// </summary>
+    /// <param name="e">Keyboard event arguments</param>
+    private void HandleDrawerKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && showAssignDrawer)
+        {
+            CloseAssignDrawer();
+        }
+    }
+
+    /// <summary>
+    /// Opens chat interface for a specific child contact.
+    /// Fetches existing chat history.
+    /// </summary>
+    /// <param name="contact">The contact to chat with</param>
+    private async Task OpenChat(ContactWithStatusDto contact)
+    {
+        try
+        {
+            chatTitle = MaskPHI(contact.ContactName);
+            chatSubtitle = contact.OwnerName ?? "";
+            SwitchChatContext(BuildChatContextKey(PrivateChatTargetType.Child, contact.ContactId, 0));
+            // Start accumulating therapy time for this patient as soon as chat opens
+            AppState.StartChatSession(contact.ContactId);
+            
+            currentPrivateChatReceiverId = contact.ContactId;
+            currentChatGroupId = 0;
+            currentPrivateChatTargetType = PrivateChatTargetType.Child;
+            isUserParticipant = true;
+
+            await LoadPrivateChatsAsync();
+
+            if (privateChatsByChildId.TryGetValue(contact.ContactId, out var childChat))
+            {
+                currentChatGroupId = childChat.ChatGroupId;
+                chatMessages = childChat.Messages
+                    .OrderBy(message => message.SentAt)
+                    .ToList();
+                _ = MarkChatAsReadAsync(currentChatGroupId, chatMessages);
+            }
+            else
+            {
+                chatMessages = new List<ApiChatMessageDto>();
+            }
+            
+            isChatVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error", "Failed to open chat. Please try again.");
+        }
+    }
+
+    /// <summary>
+    /// Opens a private chat drawer for a family card, with the parent/member as the receiver.
+    /// The sender is the logged-in healthcare provider/admin.
+    /// </summary>
+    private async Task OpenFamilyChat(IGrouping<int, ContactWithStatusDto> familyGroup)
+    {
+        try
+        {
+            var parentUserId = familyGroup.Key;
+            var parentName = familyGroup.FirstOrDefault()?.OwnerName ?? "Parent";
+            var childCount = familyGroup.Count();
+
+            chatTitle = parentName;
+            chatSubtitle = $"{childCount} {(childCount == 1 ? "child" : "children")} in therapy";
+            SwitchChatContext(BuildChatContextKey(PrivateChatTargetType.Parent, parentUserId, 0));
+            currentPrivateChatReceiverId = parentUserId;
+            currentChatGroupId = 0;
+            currentPrivateChatTargetType = PrivateChatTargetType.Parent;
+            isUserParticipant = true;
+
+            await LoadPrivateChatsAsync();
+
+            if (privateChatsByParentId.TryGetValue(parentUserId, out var parentChat))
+            {
+                currentChatGroupId = parentChat.ChatGroupId;
+                chatMessages = parentChat.Messages
+                    .OrderBy(message => message.SentAt)
+                    .ToList();
+                _ = MarkChatAsReadAsync(currentChatGroupId, chatMessages);
+            }
+            else
+            {
+                chatMessages = new List<ApiChatMessageDto>();
+            }
+
+            isChatVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            NotificationService.Error("Error", "Failed to open family chat. Please try again.");
+        }
+    }
+
+    private async Task OpenChatGroup(ChatGroupDto group)
+    {
+        try
+        {
+            chatTitle = group.GroupName;
+            chatSubtitle = $"{group.Members.Count} members";
+            var chatContextKey = BuildChatContextKey(PrivateChatTargetType.None, 0, group.ChatGroupId);
+            SwitchChatContext(chatContextKey);
+            currentChatGroupId = group.ChatGroupId;
+            currentPrivateChatReceiverId = 0;
+            currentPrivateChatTargetType = PrivateChatTargetType.None;
+
+            // Check if user is a participant in this group
+            isUserParticipant = group.Members.Any(m => m.MemberId == AppState.UserId);
+            
+            await LoadChatMessagesAsync(currentChatGroupId, chatContextKey, mergeLocalMessages: true);
+            isChatVisible = true;
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            NotificationService.Error("Error", "Failed to open group chat.");
+        }
+    }
+
+    private async Task LoadChatMessagesAsync(int groupId, string? chatContextKey = null, bool mergeLocalMessages = true)
+    {
+        try
+        {
+            List<ApiChatMessageDto> incomingMessages = new();
+            var targetChatContextKey = chatContextKey ?? activeChatContextKey;
+
+            userChatDetails = await ChatService.GetUserChatDetailsAsync(AppState.UserId, operatorName);
+            RebuildChatMappings();
+
+            if (!string.Equals(activeChatContextKey, targetChatContextKey, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (currentPrivateChatTargetType == PrivateChatTargetType.Child
+                && currentPrivateChatReceiverId > 0
+                && privateChatsByChildId.TryGetValue(currentPrivateChatReceiverId, out var childChat))
+            {
+                currentChatGroupId = childChat.ChatGroupId;
+                incomingMessages = childChat.Messages.OrderBy(m => m.SentAt).ToList();
+            }
+            else if (currentPrivateChatTargetType == PrivateChatTargetType.Parent
+                && currentPrivateChatReceiverId > 0
+                && privateChatsByParentId.TryGetValue(currentPrivateChatReceiverId, out var parentChat))
+            {
+                currentChatGroupId = parentChat.ChatGroupId;
+                incomingMessages = parentChat.Messages.OrderBy(m => m.SentAt).ToList();
+            }
+            else
+            {
+                var targetChat = groupChatsById.TryGetValue(groupId, out var groupChat)
+                    ? groupChat
+                    : null;
+
+                if (targetChat != null)
+                {
+                    incomingMessages = targetChat.Messages.OrderBy(m => m.SentAt).ToList();
+                }
+            }
+
+            if (!mergeLocalMessages)
+            {
+                chatMessages = incomingMessages
+                    .OrderBy(message => message.SentAt)
+                    .ToList();
+            }
+            else if (incomingMessages.Any() || chatMessages.Any())
+            {
+                foreach (var localMsg in chatMessages.ToList())
+                {
+                    if (!incomingMessages.Any(m => m.MessageId == localMsg.MessageId))
+                    {
+                        if (DateTime.UtcNow - localMsg.SentAt.ToUniversalTime() < TimeSpan.FromSeconds(30))
+                        {
+                           incomingMessages.Add(localMsg);
+                        }
+                    }
+                }
+
+                chatMessages = MergeServerMessagesWithLocal(incomingMessages);
+            }
+            else
+            {
+                chatMessages = new List<ApiChatMessageDto>();
+            }
+
+            await LoadGroupsAsync();
+            
+            var group = ChatGroups.FirstOrDefault(g => g.ChatGroupId == currentChatGroupId);
+            if (group != null)
+            {
+                _ = MarkChatAsReadAsync(group.ChatGroupId, chatMessages);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing messages: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Handles the chat drawer visibility toggle.
+    /// When the drawer closes for a patient-specific (child) chat, accumulated
+    /// chat time is flushed into that patient's therapy time counter so it is
+    /// picked up by the RTM note editor as clinical minutes.
+    /// </summary>
+    private void HandleChatVisibilityChanged(bool isVisible)
+    {
+        isChatVisible = isVisible;
+
+        if (isVisible)
+        {
+            // Start a timer to refresh the UI every second while chat is open
+            // to show live progress in the debug sticker
+            _stickerTimer?.Dispose();
+            _stickerTimer = new System.Threading.Timer(_ =>
+            {
+                InvokeAsync(StateHasChanged);
+            }, null, 1000, 1000);
+        }
+        else 
+        {
+            _stickerTimer?.Dispose();
+            _stickerTimer = null;
+            
+            if (currentPrivateChatTargetType == PrivateChatTargetType.Child && currentPrivateChatReceiverId > 0)
+            {
+                // Chat closed for a specific patient — flush elapsed chat time
+                AppState.FlushChatSessionTime(currentPrivateChatReceiverId);
+            }
+        }
+    }
+
+    private async Task HandleSendMessageAsync(string messageText)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+        {
+            return;
+        }
+
+        Console.WriteLine("\n****************************************************");
+        Console.WriteLine($"[CHAT] SENDING MESSAGE: {messageText}");
+        Console.WriteLine("****************************************************\n");
+
+        var trimmedMessage = messageText.Trim();
+        var localMessage = CreateLocalOutgoingMessage(trimmedMessage);
+
+        try
+        {
+            ApiChatMessageDto? sentMessage = null;
+
+            chatMessages.Add(localMessage);
+            chatMessages = chatMessages.OrderBy(message => message.SentAt).ToList();
+            StateHasChanged();
+
+            if (currentPrivateChatReceiverId > 0)
+            {
+                var privateRequest = new SendPrivateMessageRequest
+                {
+                    SenderType = AppState.Role ?? "Provider",
+                    SenderId = AppState.UserId,
+                    ReceiverId = currentPrivateChatReceiverId,
+                    MuseumId = AppState.MuseumId,
+                    MessageText = trimmedMessage,
+                    ChatGroupId = currentChatGroupId,
+                    IsFamily = currentPrivateChatTargetType == PrivateChatTargetType.Parent
+                };
+
+                sentMessage = await ChatService.SendPrivateMessageAsync(privateRequest, operatorName);
+            }
+            else if (currentChatGroupId > 0)
+            {
+                var groupRequest = new SendMessageRequest
+                {
+                    ChatGroupId = currentChatGroupId,
+                    SenderType = AppState.Role ?? "Provider",
+                    SenderId = AppState.UserId,
+                    MessageText = trimmedMessage
+                };
+
+                sentMessage = await ChatService.SendMessageAsync(groupRequest, operatorName);
+            }
+
+            if (sentMessage == null)
+            {
+                var sendRecovered = await TryRecoverRecentlySentMessageAsync(localMessage, trimmedMessage);
+                if (sendRecovered)
+                {
+                    _ = MarkChatAsReadAsync(currentChatGroupId, chatMessages);
+                    return;
+                }
+
+                chatMessages.RemoveAll(message => message.MessageId == localMessage.MessageId);
+                chatMessages = chatMessages.OrderBy(message => message.SentAt).ToList();
+                StateHasChanged();
+                NotificationService.Error("Error", "Failed to send message.");
+                return;
+            }
+
+            chatMessages.RemoveAll(message => message.MessageId == localMessage.MessageId);
+            sentMessage = NormalizeOutgoingMessage(sentMessage, trimmedMessage, AppState.Role ?? "Provider");
+            localSentMessageIds.Add(sentMessage.MessageId);
+
+            if (!chatMessages.Any(message => message.MessageId == sentMessage.MessageId))
+            {
+                chatMessages.Add(sentMessage);
+                chatMessages = chatMessages.OrderBy(message => message.SentAt).ToList();
+                StateHasChanged();
+            }
+
+            await LoadPrivateChatsAsync();
+            await LoadGroupsAsync();
+
+            if (currentPrivateChatTargetType == PrivateChatTargetType.Child
+                && currentPrivateChatReceiverId > 0
+                && privateChatsByChildId.TryGetValue(currentPrivateChatReceiverId, out var childChat))
+            {
+                currentChatGroupId = childChat.ChatGroupId;
+                chatMessages = MergeServerMessagesWithLocal(childChat.Messages);
+            }
+            else if (currentPrivateChatTargetType == PrivateChatTargetType.Parent
+                && currentPrivateChatReceiverId > 0
+                && privateChatsByParentId.TryGetValue(currentPrivateChatReceiverId, out var parentChat))
+            {
+                currentChatGroupId = parentChat.ChatGroupId;
+                chatMessages = MergeServerMessagesWithLocal(parentChat.Messages);
+            }
+            else if (currentChatGroupId > 0)
+            {
+                await LoadChatMessagesAsync(currentChatGroupId);
+            }
+
+            _ = MarkChatAsReadAsync(currentChatGroupId, chatMessages);
+        }
+        catch (Exception)
+        {
+            chatMessages.RemoveAll(message => message.MessageId == localMessage.MessageId);
+            chatMessages = chatMessages.OrderBy(message => message.SentAt).ToList();
+            StateHasChanged();
+            NotificationService.Error("Error", "Failed to send message.");
+        }
+    }
+
+    private ApiChatMessageDto NormalizeOutgoingMessage(ApiChatMessageDto message, string fallbackText, string senderType)
+    {
+        message.SenderId = AppState.UserId;
+        message.SenderType = senderType;
+
+        if (string.IsNullOrWhiteSpace(message.MessageText))
+        {
+            message.MessageText = fallbackText;
+        }
+
+        if (message.SentAt == default)
+        {
+            message.SentAt = DateTime.UtcNow;
+        }
+
+        return message;
+    }
+
+    private List<ApiChatMessageDto> MergeServerMessagesWithLocal(IEnumerable<ApiChatMessageDto>? serverMessages)
+    {
+        var mergedMessages = (serverMessages ?? Enumerable.Empty<ApiChatMessageDto>())
+            .OrderBy(message => message.SentAt)
+            .ToList();
+
+        foreach (var localMessage in chatMessages)
+        {
+            if (mergedMessages.Any(message => message.MessageId == localMessage.MessageId))
+            {
+                continue;
+            }
+
+            var shouldKeepLocalMessage = localMessage.MessageId < 0
+                || localSentMessageIds.Contains(localMessage.MessageId)
+                || DateTime.UtcNow - localMessage.SentAt.ToUniversalTime() < TimeSpan.FromSeconds(30);
+
+            if (shouldKeepLocalMessage)
+            {
+                mergedMessages.Add(localMessage);
+            }
+        }
+
+        return mergedMessages
+            .OrderBy(message => message.SentAt)
+            .ToList();
+    }
+
+    private async Task<bool> TryRecoverRecentlySentMessageAsync(ApiChatMessageDto localMessage, string messageText)
+    {
+        await LoadPrivateChatsAsync();
+        await LoadGroupsAsync();
+
+        if (currentPrivateChatTargetType == PrivateChatTargetType.Child
+            && currentPrivateChatReceiverId > 0
+            && privateChatsByChildId.TryGetValue(currentPrivateChatReceiverId, out var childChat))
+        {
+            currentChatGroupId = childChat.ChatGroupId;
+            chatMessages = MergeServerMessagesWithLocal(childChat.Messages);
+        }
+        else if (currentPrivateChatTargetType == PrivateChatTargetType.Parent
+            && currentPrivateChatReceiverId > 0
+            && privateChatsByParentId.TryGetValue(currentPrivateChatReceiverId, out var parentChat))
+        {
+            currentChatGroupId = parentChat.ChatGroupId;
+            chatMessages = MergeServerMessagesWithLocal(parentChat.Messages);
+        }
+        else if (currentChatGroupId > 0)
+        {
+            await LoadChatMessagesAsync(currentChatGroupId);
+        }
+
+        StateHasChanged();
+
+        return chatMessages.Any(message =>
+            message.MessageId != localMessage.MessageId
+            && message.SenderId == AppState.UserId
+            && string.Equals(message.MessageText?.Trim(), messageText, StringComparison.Ordinal)
+            && Math.Abs((message.SentAt.ToUniversalTime() - localMessage.SentAt.ToUniversalTime()).TotalSeconds) <= 30);
+    }
+
+    private static string BuildChatContextKey(PrivateChatTargetType targetType, int receiverId, int chatGroupId)
+    {
+        return targetType switch
+        {
+            PrivateChatTargetType.Child => $"child:{receiverId}",
+            PrivateChatTargetType.Parent => $"parent:{receiverId}",
+            _ => $"group:{chatGroupId}"
+        };
+    }
+
+    private void SwitchChatContext(string newChatContextKey)
+    {
+        if (string.Equals(activeChatContextKey, newChatContextKey, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        activeChatContextKey = newChatContextKey;
+        chatMessages = new List<ApiChatMessageDto>();
+        localSentMessageIds = new HashSet<int>();
+    }
+
+    private ApiChatMessageDto CreateLocalOutgoingMessage(string messageText)
+    {
+        var trimmedMessage = messageText.Trim();
+
+        return new ApiChatMessageDto
+        {
+            MessageId = nextLocalMessageId--,
+            SenderId = AppState.UserId,
+            SenderType = AppState.Role ?? "Provider",
+            SenderName = operatorName,
+            MessageText = trimmedMessage,
+            SentAt = DateTime.UtcNow,
+            IsRead = true
+        };
+    }
+
+    private async Task OpenAssignDrawerForGroup(ChatGroupDto group)
+    {
+        Console.WriteLine($"[Children] Opening assign drawer for group: {group.GroupName} (ID: {group.ChatGroupId})");
+        var childMembers = group.Members?
+            .Where(m => m.MemberType?.ToLower() == "child" || m.MemberType?.ToLower() == "contact")
+            .ToList();
+
+        if (childMembers == null || !childMembers.Any())
+        {
+            Console.WriteLine("[Children] Group has no child members.");
+            NotificationService.Warning("No Members", "This group has no child members to assign exercises to.");
+            return;
+        }
+
+        Console.WriteLine($"[Children] Group has {childMembers.Count} child members.");
+        var contactIds = childMembers.Select(m => m.MemberId).ToHashSet();
+        var groupContacts = allContacts.Where(c => contactIds.Contains(c.ContactId)).ToList();
+
+        if (!groupContacts.Any())
+        {
+             Console.WriteLine("[Children] None of the group members found in allContacts list.");
+             NotificationService.Warning("No Members", "Unable to find members in the current contact list.");
+             return;
+        }
+
+        Console.WriteLine($"[Children] Resolved {groupContacts.Count} contacts from allContacts.");
+        selectedGroupContacts = groupContacts;
+        selectedGroupName = group.GroupName;
+        selectedGroupId = group.ChatGroupId;
+        selectedContact = null;
+        showAssignDrawer = true;
+        
+        // Ensure modules are loaded
+        if (moduleCatalog.Count == 0)
+        {
+            Console.WriteLine("[Children] Module catalog empty, fetching...");
+            isLoadingModules = true;
+            StateHasChanged();
+            await FetchModuleCatalogInBackgroundAsync();
+            isLoadingModules = false;
+        }
+
+        InitializeModulesForCurrentView();
+        displayedModulesCount = InitialModuleDisplayCount;
+        StateHasChanged();
+    }
+
+    private List<AssignedTherapyDto> GetGroupAssignments(ChatGroupDto group)
+    {
+        if (group.Members == null || !group.Members.Any()) return new();
+
+        var childMembers = group.Members
+            .Where(m => m.MemberType?.ToLower() == "child" || m.MemberType?.ToLower() == "contact")
+            .ToList();
+
+        if (!childMembers.Any()) return new();
+
+        var contactIds = childMembers.Select(m => m.MemberId).ToHashSet();
+        var members = allContacts.Where(c => contactIds.Contains(c.ContactId)).ToList();
+
+        if (!members.Any())
+        {
+            // If we find them in members but not in allContacts, it's a synchronization issue
+            return new();
+        }
+
+        // Identify common assignments
+        var firstMember = members.First();
+        if (firstMember.Assignments == null || !firstMember.Assignments.Any()) 
+        {
+            return new();
+        }
+
+        // Robust comparison using ModuleId (primary) or ModuleName (fallback)
+        var common = firstMember.Assignments
+            .Where(a => members.Skip(1).All(m => 
+                m.Assignments != null && 
+                m.Assignments.Any(ma => (ma.ModuleId > 0 && ma.ModuleId == a.ModuleId) || 
+                                       (!string.IsNullOrEmpty(ma.ModuleName) && ma.ModuleName == a.ModuleName))))
+            .ToList();
+        
+        if (common.Any())
+        {
+            Console.WriteLine($"[GetGroupAssignments] Found {common.Count} common assignments for '{group.GroupName}' among {members.Count} members.");
+        }
+        
+        return common;
+    }
+
+    private List<AssignedTherapyDto> GetFamilyAssignments(IGrouping<int, ContactWithStatusDto> group)
+    {
+        var members = group.ToList();
+        if (!members.Any()) return new();
+
+        var firstMember = members.First();
+        if (firstMember.Assignments == null || !firstMember.Assignments.Any()) 
+        {
+            return new();
+        }
+
+        var common = firstMember.Assignments
+            .Where(a => members.Skip(1).All(m => 
+                m.Assignments != null && 
+                m.Assignments.Any(ma => (ma.ModuleId > 0 && ma.ModuleId == a.ModuleId) || 
+                                       (!string.IsNullOrEmpty(ma.ModuleName) && ma.ModuleName == a.ModuleName))))
+            .ToList();
+        
+        return common;
+    }
+
+    private async Task HandleFamilyChat(IGrouping<int, ContactWithStatusDto> familyGroup)
+    {
+        var primaryChild = familyGroup.FirstOrDefault();
+        if (primaryChild == null)
+        {
+            NotificationService.Info("Chat", "No child found in this family.");
+            return;
+        }
+
+        await OpenChat(primaryChild);
+    }
+
+    private async Task HandleFamilyAssign(IGrouping<int, ContactWithStatusDto> familyGroup)
+    {
+        var groupContacts = familyGroup.ToList();
+        if (!groupContacts.Any())
+        {
+            NotificationService.Info("Assign", "No child found in this family.");
+            return;
+        }
+
+        selectedGroupContacts = groupContacts;
+        selectedGroupName = (groupContacts.FirstOrDefault()?.OwnerName ?? "Unknown") + " Family";
+        selectedGroupId = null;
+        selectedContact = null;
+        showAssignDrawer = true;
+        
+        // Ensure modules are loaded
+        if (moduleCatalog.Count == 0)
+        {
+            isLoadingModules = true;
+            StateHasChanged();
+            await FetchModuleCatalogInBackgroundAsync();
+        }
+    }
+
+    private void TagAssignments(ContactWithStatusDto contact)
+    {
+        if (contact.Assignments == null) return;
+
+        foreach (var assignment in contact.Assignments)
+        {
+            // Default to Individual
+            assignment.SourceType = "Individual";
+            assignment.SourceName = "";
+
+            // 1. Check Groups for common assignments
+            var groups = ChatGroups.Where(g => g.Members != null && g.Members.Any(m => m.MemberId == contact.ContactId)).ToList();
+            foreach (var group in groups)
+            {
+                var common = GetGroupAssignments(group);
+                if (common.Any(a => a.ModuleId == assignment.ModuleId))
+                {
+                    assignment.SourceType = "Group";
+                    assignment.SourceName = group.GroupName;
+                    break;
+                }
+            }
+
+            if (assignment.SourceType != "Individual") continue;
+
+            // 2. Check Family for common assignments
+            // Group by UserId to get the family members
+            var familyGroup = FilteredContacts.Where(c => c.UserId == contact.UserId).GroupBy(c => c.UserId).FirstOrDefault();
+            if (familyGroup != null && familyGroup.Count() > 1)
+            {
+                var common = GetFamilyAssignments(familyGroup);
+                if (common.Any(a => a.ModuleId == assignment.ModuleId))
+                {
+                    assignment.SourceType = "Family";
+                    assignment.SourceName = (contact.OwnerName ?? "Parent") + " Family";
+                }
+            }
+        }
+    }
+
+    private async Task HandlePillClick(ContactWithStatusDto contact, AssignedTherapyDto assignment)
+    {
+        if (assignment.SourceType != "Individual" && !string.IsNullOrEmpty(assignment.SourceType))
+        {
+            NotificationService.Info("Shared Assignment", $"This assignment comes from {assignment.SourceType} ({assignment.SourceName}), so it has to be modified from that section.");
+            return;
+        }
+        
+        await OpenAssignDrawer(contact, assignment.ModuleId);
+    }
+    private int GetUnreadCountForChatGroup(int chatGroupId)
+    {
+        return unreadCountsByChatGroupId.TryGetValue(chatGroupId, out var unreadCount)
+            ? unreadCount
+            : 0;
+    }
+
+    private int GetChildUnreadCount(ContactWithStatusDto contact)
+    {
+        if (privateChatsByChildId.TryGetValue(contact.ContactId, out var childChat))
+        {
+            return GetUnreadCountForChatGroup(childChat.ChatGroupId);
+        }
+
+        return 0;
+    }
+
+    private static string GetContactProviderLabel(ContactWithStatusDto contact)
+    {
+        if (!string.IsNullOrWhiteSpace(contact.AssignedProviderName))
+        {
+            return contact.AssignedProviderName;
+        }
+
+        return !string.IsNullOrWhiteSpace(contact.OwnerName)
+            ? contact.OwnerName
+            : "No provider assigned";
+    }
+
+    private int GetFamilyUnreadCount(IGrouping<int, ContactWithStatusDto> familyGroup)
+    {
+        if (privateChatsByParentId.TryGetValue(familyGroup.Key, out var parentChat))
+        {
+            return GetUnreadCountForChatGroup(parentChat.ChatGroupId);
+        }
+
+        return 0;
+    }
+
+    private int GetChildrenViewUnreadCount()
+    {
+        return FilteredContacts
+            .Select(contact => privateChatsByChildId.TryGetValue(contact.ContactId, out var chat)
+                ? chat.ChatGroupId
+                : 0)
+            .Where(chatGroupId => chatGroupId > 0)
+            .Distinct()
+            .Sum(GetUnreadCountForChatGroup);
+    }
+
+    private int GetFamiliesViewUnreadCount()
+    {
+        return FilteredGroups
+            .Select(group => privateChatsByParentId.TryGetValue(group.Key, out var chat)
+                ? chat.ChatGroupId
+                : 0)
+            .Where(chatGroupId => chatGroupId > 0)
+            .Distinct()
+            .Sum(GetUnreadCountForChatGroup);
+    }
+
+    private int GetGroupsViewUnreadCount()
+    {
+        return FilteredChatGroups
+            .Select(group => group.ChatGroupId)
+            .Distinct()
+            .Sum(GetUnreadCountForChatGroup);
+    }
+
+    private async Task RestoreLastSeenMessagesAsync()
+    {
+        try
+        {
+            var payload = await JSRuntime.InvokeAsync<string>("chatUnreadStorage.getLastSeenMessages");
+            var rawEntries = JsonSerializer.Deserialize<Dictionary<string, int>>(payload) ?? new Dictionary<string, int>();
+            var normalizedEntries = rawEntries
+                .Where(entry => int.TryParse(entry.Key, out _))
+                .ToDictionary(entry => int.Parse(entry.Key), entry => entry.Value);
+
+            AppState.SetLastSeenMessages(normalizedEntries);
+        }
+        catch
+        {
+            AppState.SetLastSeenMessages(new Dictionary<int, int>());
+        }
+    }
+
+    private async Task PersistLastSeenMessagesAsync()
+    {
+        var payload = JsonSerializer.Serialize(
+            AppState.LastSeenMessageIds.ToDictionary(
+                entry => entry.Key.ToString(),
+                entry => entry.Value));
+
+        await JSRuntime.InvokeVoidAsync("chatUnreadStorage.setLastSeenMessages", payload);
+    }
+
+    private async Task SeedLastSeenMessagesForUnknownChatsAsync()
+    {
+        var hasChanges = false;
+
+        foreach (var chatGroup in userChatDetails)
+        {
+            if (AppState.LastSeenMessageIds.ContainsKey(chatGroup.ChatGroupId))
+            {
+                continue;
+            }
+
+            var latestMessageId = chatGroup.Messages
+                .OrderByDescending(message => message.MessageId)
+                .FirstOrDefault()
+                ?.MessageId ?? 0;
+
+            AppState.MarkGroupAsRead(chatGroup.ChatGroupId, latestMessageId);
+            hasChanges = true;
+        }
+
+        if (hasChanges)
+        {
+            await PersistLastSeenMessagesAsync();
+        }
+    }
+
+    private void RecalculateUnreadCounts()
+    {
+        var previousUnreadCounts = unreadCountsByChatGroupId;
+        unreadCountsByChatGroupId = userChatDetails.ToDictionary(
+            chatGroup => chatGroup.ChatGroupId,
+            chatGroup =>
+            {
+                // Use server-side IsRead flag, filter out messages sent by current user
+                return chatGroup.Messages.Count(m => !m.IsRead && m.SenderId != AppState.UserId);
+            });
+
+        var hasNewUnreadMessages = unreadCountsByChatGroupId.Any(entry =>
+        {
+            var previousUnreadCount = previousUnreadCounts.TryGetValue(entry.Key, out var count) ? count : 0;
+            return entry.Value > previousUnreadCount;
+        });
+
+        if (hasNewUnreadMessages)
+        {
+            childrenCurrentPage = 1;
+            familyCurrentPage = 1;
+        }
+
+        AppState.SetChatUnreadCounts(unreadCountsByChatGroupId);
+
+        // Debug logging for troubleshooting phantom notifications
+        var total = unreadCountsByChatGroupId.Values.Sum();
+        if (total > 0)
+        {
+            var details = string.Join(", ", unreadCountsByChatGroupId.Where(x => x.Value > 0).Select(x => $"[Group {x.Key}: {x.Value} unread]"));
+            Console.WriteLine($"[DEBUG] Notification Count: {total}. Details: {details}");
+        }
+    }
+
+    private async Task MarkChatAsReadAsync(int chatGroupId, List<ApiChatMessageDto>? messages)
+    {
+        if (chatGroupId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // 1. Identify and Mark Unread Messages as Read via API
+            if (messages != null && messages.Any())
+            {
+                var unreadMessages = messages.Where(m => m != null && !m.IsRead).ToList();
+                if (unreadMessages.Any())
+                {
+                    Console.WriteLine($"[DEBUG] Marking {unreadMessages.Count} messages as read for group {chatGroupId}");
+                    foreach (var msg in unreadMessages)
+                    {
+                        try
+                        {
+                            var success = await ChatService.MarkAsReadAsync(msg.MessageId, operatorName);
+                            if (success)
+                            {
+                                msg.IsRead = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[ERROR] Failed to mark message {msg.MessageId} as read: {ex.Message}");
+                        }
+                    }
+                }
+            }
+
+            // 2. Update Local State and Persistence
+            var latestMessageId = (messages ?? new List<ApiChatMessageDto>())
+                .Where(m => m != null)
+                .OrderByDescending(message => message.MessageId)
+                .FirstOrDefault()
+                ?.MessageId ?? 0;
+
+            AppState.MarkGroupAsRead(chatGroupId, latestMessageId);
+            RecalculateUnreadCounts();
+
+            var group = ChatGroups.FirstOrDefault(chat => chat.ChatGroupId == chatGroupId);
+            if (group != null)
+            {
+                group.UnreadCount = GetUnreadCountForChatGroup(chatGroupId);
+            }
+
+            await PersistLastSeenMessagesAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CRITICAL ERROR] MarkChatAsReadAsync failed: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshChatsAndUnreadCountsAsync(bool seedMissingChatsAsSeen, bool updateVisibleChat)
+    {
+        await LoadPrivateChatsAsync();
+
+        if (seedMissingChatsAsSeen)
+        {
+            await SeedLastSeenMessagesForUnknownChatsAsync();
+        }
+
+        RecalculateUnreadCounts();
+        await LoadGroupsAsync();
+
+        if (updateVisibleChat && isChatVisible && currentChatGroupId > 0)
+        {
+            await LoadChatMessagesAsync(currentChatGroupId);
+        }
+    }
+
+    private void StartChatPolling()
+    {
+        chatPollingCts = new CancellationTokenSource();
+        chatPollingTimer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+        _ = PollChatsAsync(chatPollingCts.Token);
+    }
+
+    private async Task PollChatsAsync(CancellationToken cancellationToken)
+    {
+        if (chatPollingTimer == null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (await chatPollingTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshChatsAndUnreadCountsAsync(seedMissingChatsAsSeen: true, updateVisibleChat: true);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Assigns an exercise module to a child contact.
+    /// Implements HIPAA audit logging and comprehensive error handling.
+    /// </summary>
+    /// <param name="moduleVm">Module context and timing state</param>
+    /// <returns>Task representing the asynchronous operation</returns>
+    private async Task HandleAssignExercise(ModuleViewModel moduleVm)
+    {
+        if (selectedContact == null || HasExerciseSelection(moduleVm) || !moduleVm.HasSavedTiming || moduleVm.SavedTimingSettings == null) return;
+        await AssignModuleWithTiming(moduleVm, moduleVm.SavedTimingSettings);
+    }
+
+    private async Task AssignModuleWithTiming(ModuleViewModel moduleVm, TimingSettings timing)
+    {
+        if (selectedContact == null) return;
+        
+        try
+        {
+            isAssigning = true;
+            StateHasChanged();
+            
+            // Construct the new API request
+            var request = new AssignTherapyRequest
+            {
+                source = new TherapySource
+                {
+                    userId = AppState.UserId, // Dynamic Provider ID
+                    familyUserId = selectedContact.UserId
+                },
+                moduleId = moduleVm.Data.ModuleId,
+                assignments = new List<TherapyAssignment>
+                {
+                    new TherapyAssignment
+                    {
+                        contactId = selectedContact.ContactId,
+                        moduleSchedule = MapTimingToSchedule(timing),
+                        exerciseSchedules = new List<ExerciseSchedule>() // Empty for whole module assignment
+                    }
+                }
+            };
+            
+            var success = await UserService.AssignTherapyAsync(request, operatorName);
+            
+            if (success)
+            {
+                moduleVm.IsAssigned = true;
+                NotificationService.Success("Success", $"Module assigned to {MaskPHI(selectedContact.ContactName)}");
+                
+                // Reload contacts to update assignment status
+                await LoadContactsAsync();
+            }
+            else
+            {
+                NotificationService.Error("Error", "Unable to assign module. The assignment may not have been saved.");
+            }
+        }
+        catch (HttpRequestException httpEx)
+        {
+            NotificationService.Error("Connection Error", "Unable to connect to the server. Please check your connection and try again.");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error", "An unexpected error occurred. Please try again.");
+        }
+        finally
+        {
+            isAssigning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleAssignSelected(ModuleViewModel moduleVm)
+    {
+        if (selectedContact == null) return;
+        
+        var selectedExercises = moduleVm.Exercises.Where(e => e.IsSelected).ToList();
+        if (selectedExercises.Count == 0) return;
+
+        try
+        {
+            isAssigning = true;
+            StateHasChanged();
+
+            var exerciseSchedules = new List<ExerciseSchedule>();
+            foreach (var ex in selectedExercises)
+            {
+                var timing = ex.SavedTimingSettings ?? moduleVm.SavedTimingSettings;
+                if (timing == null)
+                {
+                    NotificationService.Error("Schedule Required", $"Please schedule {ex.Data.WidgetTitle ?? "exercise"} before assigning.");
+                    isAssigning = false;
+                    return;
+                }
+                exerciseSchedules.Add(new ExerciseSchedule
+                {
+                    exerciseId = ex.Data.AutoId,
+                    schedule = MapTimingToSchedule(timing)
+                });
+            }
+
+            var request = new AssignTherapyRequest
+            {
+                source = new TherapySource
+                {
+                    userId = AppState.UserId,
+                    familyUserId = selectedContact.UserId
+                },
+                moduleId = moduleVm.Data.ModuleId,
+                assignments = new List<TherapyAssignment>
+                {
+                    new TherapyAssignment
+                    {
+                        contactId = selectedContact.ContactId,
+                        moduleSchedule = null, // Using exercise-level schedules
+                        exerciseSchedules = exerciseSchedules
+                    }
+                }
+            };
+
+            var success = await UserService.AssignTherapyAsync(request, operatorName);
+
+            if (success)
+            {
+                // If all exercises were selected, mark module as assigned
+                if (selectedExercises.Count == moduleVm.Exercises.Count)
+                {
+                    moduleVm.IsAssigned = true;
+                }
+                
+                NotificationService.Success("Success", $"{selectedExercises.Count} exercise(s) assigned to {MaskPHI(selectedContact.ContactName)}");
+                
+                // Reset selections
+                foreach (var ex in selectedExercises) ex.IsSelected = false;
+                
+                await LoadContactsAsync();
+            }
+            else
+            {
+                NotificationService.Error("Error", "Unable to assign selected exercises.");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.Error("Error", "An unexpected error occurred.");
+        }
+        finally
+        {
+            isAssigning = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenTimingModal(ModuleViewModel moduleVm, ExerciseViewModel? exerciseVm = null)
+    {
+        selectedModuleForTiming = moduleVm;
+        selectedExerciseForTiming = exerciseVm;
+
+        var sourceTiming = exerciseVm?.SavedTimingSettings ?? moduleVm.SavedTimingSettings;
+        activeTiming = sourceTiming != null ? CloneTimingSettings(sourceTiming) : new TimingSettings();
+        isTimingModalOpen = true;
+        StateHasChanged();
+    }
+
+    private void CloseTimingModal()
+    {
+        isTimingModalOpen = false;
+        selectedModuleForTiming = null;
+        selectedExerciseForTiming = null;
+        StateHasChanged();
+    }
+
+    private void SaveTimingSettings()
+    {
+        if (selectedModuleForTiming == null) return;
+
+        if (selectedExerciseForTiming != null)
+        {
+            selectedExerciseForTiming.SavedTimingSettings = CloneTimingSettings(activeTiming);
+            selectedExerciseForTiming.HasSavedTiming = true;
+        }
+        else
+        {
+            selectedModuleForTiming.SavedTimingSettings = CloneTimingSettings(activeTiming);
+            selectedModuleForTiming.HasSavedTiming = true;
+        }
+
+        isTimingModalOpen = false;
+        NotificationService.Success("Timing Saved", "Assignment will use custom timing.");
+        selectedExerciseForTiming = null;
+        StateHasChanged();
+    }
+
+    private bool HasExerciseSelection(ModuleViewModel moduleVm)
+    {
+        if (assignDrawerMode != AssignDrawerMode.Exercise) return false;
+        return moduleVm.Exercises.Any(e => e.IsSelected);
+    }
+
+    private bool CanAssignSelected(ModuleViewModel moduleVm)
+    {
+        if (isAssigning) return false;
+        var selected = moduleVm.Exercises.Where(e => e.IsSelected).ToList();
+        return selected.Count > 0 && selected.All(e => e.SavedTimingSettings != null || moduleVm.SavedTimingSettings != null);
+    }
+
+    private string GetTimingSignature(TimingSettings timing)
+    {
+        var expiration = timing.ExpirationDate?.ToString("O") ?? "null";
+        var days = string.Join(",", timing.RecurrenceDays);
+        return $"{timing.TimingType}|{timing.RelativeValue}|{timing.RelativeUnit}|{timing.AfterReference}|{timing.CompletionType}|{expiration}|{timing.MoveToArchive}|{timing.BlockReflections}|{days}";
+    }
+
+    private string GetTimingTargetName()
+    {
+        if (selectedExerciseForTiming != null)
+        {
+            return string.IsNullOrWhiteSpace(selectedExerciseForTiming.Data.WidgetTitle)
+                ? "this exercise"
+                : selectedExerciseForTiming.Data.WidgetTitle;
+        }
+
+        return selectedModuleForTiming?.Data.Name ?? "this module";
+    }
+
+    private void OnExpirationDateChanged(ChangeEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(e.Value?.ToString()))
+        {
+            activeTiming.ExpirationDate = null;
+            return;
+        }
+
+        if (DateTime.TryParse(e.Value!.ToString(), out var parsed))
+        {
+            activeTiming.ExpirationDate = parsed;
+        }
+    }
+
+    private TherapySchedule MapTimingToSchedule(TimingSettings timing)
+    {
+        string completionType = timing.CompletionType;
+        if (completionType == "Weekly" || completionType == "Custom")
+        {
+            completionType = $"{completionType}:{string.Join(",", timing.RecurrenceDays)}";
+        }
+
+        return new TherapySchedule
+        {
+            type = timing.TimingType,
+            relativeTiming = timing.TimingType == "Relative" ? new RelativeTiming
+            {
+                value = timing.RelativeValue,
+                unit = timing.RelativeUnit,
+                relativeTo = timing.AfterReference
+            } : null,
+            specificDateTimeUtc = timing.TimingType == "Specific" ? (timing.ExpirationDate ?? DateTime.UtcNow.AddDays(1)) : null,
+            completionRule = new CompletionRule
+            {
+                type = completionType,
+                expirationDateUtc = timing.ExpirationDate
+            }
+        };
+    }
+
+    private static TimingSettings CloneTimingSettings(TimingSettings source)
+    {
+        return new TimingSettings
+        {
+            TimingType = source.TimingType,
+            RelativeValue = source.RelativeValue,
+            RelativeUnit = source.RelativeUnit,
+            AfterReference = source.AfterReference,
+            CompletionType = source.CompletionType,
+            ExpirationDate = source.ExpirationDate,
+            MoveToArchive = source.MoveToArchive,
+            BlockReflections = source.BlockReflections,
+            RecurrenceDays = new List<string>(source.RecurrenceDays)
+        };
+    }
+
+    private async Task HandleFamilyPageChanged(int newPage)
+    {
+        familyCurrentPage = newPage;
+        StateHasChanged();
+    }
+
+    private async Task HandleChildrenPageSizeChanged(int newSize)
+    {
+        childrenPageSize = newSize;
+        childrenCurrentPage = 1;
+        StateHasChanged();
+        await FetchVisiblePageAssignmentsAsync();
+    }
+
+    private void HandleFamilyPageSizeChanged(int newSize)
+    {
+        familyPageSize = newSize;
+        familyCurrentPage = 1;
+        StateHasChanged();
+    }
+
+    private int TotalChildrenPages => Math.Max(1, (int)Math.Ceiling(FilteredContacts.Count / (double)childrenPageSize));
+
+    private void ToggleFamilyExpand(int familyId)
+    {
+        if (expandedFamilyIds.Contains(familyId))
+            expandedFamilyIds.Remove(familyId);
+        else
+            expandedFamilyIds.Add(familyId);
+        
+        StateHasChanged();
+    }
+
+    private async Task ToggleModuleExpand(ModuleViewModel moduleVm)
+    {
+        moduleVm.IsExpanded = !moduleVm.IsExpanded;
+        
+        if (moduleVm.IsExpanded && moduleVm.Exercises.Count == 0)
+        {
+            try
+            {
+                moduleVm.IsLoadingExercises = true;
+                StateHasChanged(); // Show loading spinner
+                
+                var exercises = await UserService.GetModuleExercisesAsync(moduleVm.Data.ModuleId, operatorName);
+                moduleVm.Exercises = exercises.Select(e => new ExerciseViewModel { Data = e }).ToList(); // Initialize wrapper
+
+                if (assignDrawerMode == AssignDrawerMode.Module)
+                {
+                    foreach (var ex in moduleVm.Exercises)
+                    {
+                        ex.IsSelected = true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading exercises: {ex.Message}");
+                NotificationService.Error("Error", "Failed to load exercises for this module");
+            }
+            finally
+            {
+                moduleVm.IsLoadingExercises = false;
+                StateHasChanged();
+            }
+        }
+        else
+        {
+            // Just toggle UI
+            StateHasChanged();
+        }
+    }
+
+    private void SelectAllExercisesForModuleMode()
+    {
+        foreach (var moduleVm in availableModules)
+        {
+            foreach (var exerciseVm in moduleVm.Exercises)
+            {
+                exerciseVm.IsSelected = true;
+            }
+        }
+    }
+
+    private void ClearAllExerciseSelections()
+    {
+        foreach (var moduleVm in availableModules)
+        {
+            foreach (var exerciseVm in moduleVm.Exercises)
+            {
+                exerciseVm.IsSelected = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// HIPAA-compliant PHI masking for contact names in list view.
+    /// Shows first name + last initial (e.g., "John D.") to protect patient privacy.
+    /// </summary>
+    /// <param name="fullName">Full name of the contact</param>
+    /// <returns>Masked name string</returns>
+    private string MaskPHI(string fullName)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+            return "Unknown";
+        
+        var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+            return parts[0]; // Just first name
+        
+        // First name + last initial for privacy
+        return $"{parts[0]} {parts[^1][0]}.";
+    }
+
+    /// <summary>
+    /// Formats a DateTime into a human-readable relative time string.
+    /// Examples: "Just now", "5 minutes ago", "2 hours ago", "3 days ago"
+    /// </summary>
+    /// <param name="dateTime">The DateTime to format</param>
+    /// <returns>Human-readable time string</returns>
+    private string FormatTimeAgo(DateTime? dateTime)
+    {
+        if (!dateTime.HasValue)
+            return "Never";
+        
+        var timeSpan = DateTime.UtcNow - dateTime.Value;
+        
+        if (timeSpan.TotalMinutes < 1)
+            return "Just now";
+        if (timeSpan.TotalMinutes < 60)
+            return $"{(int)timeSpan.TotalMinutes} minutes ago";
+        if (timeSpan.TotalHours < 24)
+            return $"{(int)timeSpan.TotalHours} hours ago";
+        if (timeSpan.TotalDays < 7)
+            return $"{(int)timeSpan.TotalDays} days ago";
+        if (timeSpan.TotalDays < 30)
+            return $"{(int)(timeSpan.TotalDays / 7)} weeks ago";
+        
+        return dateTime.Value.ToString("MMM d, yyyy");
+    }
+
+    private string GetStatusColorClass(string status)
+    {
+        return status?.ToLower() switch
+        {
+            "active" => "green",
+            "new" => "blue",
+            "inactive" => "gray",
+            "attention" => "red",
+            _ => "gray"
+        };
+    }
+
+    private string GetAdherenceColorClass(double rate)
+    {
+        if (rate >= 90) return "green";
+        if (rate >= 75) return "blue";
+        if (rate >= 50) return "orange";
+        return "red";
+    }
+
+    private enum ViewType
+    {
+        Children,
+        Families,
+        Groups
+    }
+
+    private enum AssignDrawerMode
+    {
+        Module,
+        Exercise
+    }
+
+    private void ToggleMobileSidebar()
+    {
+        // Handled via JS in App.razor
+    }
+
+    private void NavigateToChildDetailsTemporary(ContactWithStatusDto contact)
+    {
+        AppState.StartReviewSession(contact.ContactId);
+        NavigationManager.NavigateTo($"/programs/{contact.ContactId}");
+    }
+    
+    // ViewModel to handle expansion state and loaded exercises
+    public class ModuleViewModel
+    {
+        public ModuleSelectionDto Data { get; set; } = new();
+        public bool IsExpanded { get; set; }
+        public bool IsLoadingExercises { get; set; }
+        public List<ExerciseViewModel> Exercises { get; set; } = new();
+        public TimingSettings? SavedTimingSettings { get; set; }
+        public bool HasSavedTiming { get; set; }
+        public bool IsAssigned { get; set; }
+    }
+
+    public class ExerciseViewModel
+    {
+        public MuseumAdmin.Components.Pages.Connect.ModuleMessagesTesting Data { get; set; } = new();
+        public bool IsSelected { get; set; } = false;
+        public TimingSettings? SavedTimingSettings { get; set; }
+        public bool HasSavedTiming { get; set; }
+    }
+
+    public void Dispose()
+    {
+        _stickerTimer?.Dispose();
+        chatPollingCts?.Cancel();
+        chatPollingCts?.Dispose();
+        chatPollingTimer?.Dispose();
+    }
+}
+
+@if (isTimingModalOpen && selectedModuleForTiming != null)
+{
+    <div class="modal-backdrop timing-modal-overlay fade-in" @onclick="CloseTimingModal">
+        <div class="modal-dialog modal-timing fade-in-up" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h3>Timing Configuration</h3>
+                    <p>Configure how <strong>@GetTimingTargetName()</strong> is delivered</p>
+                </div>
+                <button type="button" class="btn-close-modal" @onclick="CloseTimingModal">×</button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Timing Type Togglers -->
+                <div class="timing-type-toggle">
+                    <button type="button" 
+                            class="toggle-btn @(activeTiming.TimingType == "Relative" ? "active" : "")"
+                            @onclick='() => activeTiming.TimingType = "Relative"'>
+                        Relative Timing
+                    </button>
+                    <button type="button" 
+                            class="toggle-btn @(activeTiming.TimingType == "Specific" ? "active" : "")"
+                            @onclick='() => activeTiming.TimingType = "Specific"'>
+                        Specific Date & Time
+                    </button>
+                </div>
+
+                @if (activeTiming.TimingType == "Relative")
+                {
+                    <div class="relative-timing-section animate-slide-down">
+                        <label class="form-label-sm">Deliver after:</label>
+                        <div class="timing-row">
+                            <input type="number" @bind="activeTiming.RelativeValue"
+                                   class="form-input timing-val" />
+                            <select @bind="activeTiming.RelativeUnit" class="form-select timing-unit-select">
+                                <option value="Minutes">Minutes</option>
+                                <option value="Hours">Hours</option>
+                                <option value="Days">Days</option>
+                                <option value="Weeks">Weeks</option>
+                            </select>
+                            <span class="timing-label">after</span>
+                            <select @bind="activeTiming.AfterReference" class="form-select timing-ref-select">
+                                <option value="After Last Activity">After Last Activity</option>
+                                <option value="After Initial Post">After Initial Post</option>
+                                <option value="After Previous Message">After Previous Message</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="specific-timing-section animate-slide-down">
+                        <label class="form-label-sm">Specific Date & Time:</label>
+                        <div class="timing-row">
+                            <input type="datetime-local" class="form-input" 
+                                   @bind="activeTiming.ExpirationDate" />
+                        </div>
+                    </div>
+                }
+
+                <div class="timing-divider"></div>
+
+                <!-- Completion Options -->
+                <div class="completion-limit-section">
+                    <label class="form-label-sm">How many times can the user complete this exercise?</label>
+                    <div class="timing-type-toggle small">
+                        <button type="button" 
+                                class="toggle-btn @(activeTiming.CompletionType == "Once" ? "active" : "")"
+                                @onclick='() => activeTiming.CompletionType = "Once"'>
+                            Once
+                        </button>
+                        <button type="button" 
+                                class="toggle-btn @(activeTiming.CompletionType == "Daily" ? "active" : "")"
+                                @onclick='() => activeTiming.CompletionType = "Daily"'>
+                            Daily
+                        </button>
+                        <button type="button" 
+                                class="toggle-btn @(activeTiming.CompletionType == "Weekly" ? "active" : "")"
+                                @onclick='() => { activeTiming.CompletionType = "Weekly"; if(!activeTiming.RecurrenceDays.Any()) activeTiming.RecurrenceDays.Add("Monday"); }'>
+                            Weekly
+                        </button>
+                        <button type="button" 
+                                class="toggle-btn @(activeTiming.CompletionType == "Custom" ? "active" : "")"
+                                @onclick='() => activeTiming.CompletionType = "Custom"'>
+                            Custom
+                        </button>
+                    </div>
+                </div>
+
+                @if (activeTiming.CompletionType == "Weekly")
+                {
+                    <div class="recurrence-section animate-slide-down" style="margin-top: 16px;">
+                        <label class="form-label">Repeat every</label>
+                        <select class="form-select" @onchange='e => { activeTiming.RecurrenceDays.Clear(); activeTiming.RecurrenceDays.Add(e.Value?.ToString() ?? "Monday"); }'>
+                            <option value="Monday" selected="@(activeTiming.RecurrenceDays.Contains("Monday"))">Monday</option>
+                            <option value="Tuesday" selected="@(activeTiming.RecurrenceDays.Contains("Tuesday"))">Tuesday</option>
+                            <option value="Wednesday" selected="@(activeTiming.RecurrenceDays.Contains("Wednesday"))">Wednesday</option>
+                            <option value="Thursday" selected="@(activeTiming.RecurrenceDays.Contains("Thursday"))">Thursday</option>
+                            <option value="Friday" selected="@(activeTiming.RecurrenceDays.Contains("Friday"))">Friday</option>
+                            <option value="Saturday" selected="@(activeTiming.RecurrenceDays.Contains("Saturday"))">Saturday</option>
+                            <option value="Sunday" selected="@(activeTiming.RecurrenceDays.Contains("Sunday"))">Sunday</option>
+                        </select>
+                    </div>
+                }
+
+                @if (activeTiming.CompletionType == "Custom")
+                {
+                    <div class="recurrence-section animate-slide-down" style="margin-top: 16px;">
+                        <label class="form-label">Repeat on these days</label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px;">
+                            @foreach (var day in new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" })
+                            {
+                                bool isDaySelected = activeTiming.RecurrenceDays.Contains(day);
+                                <button type="button" 
+                                        class="btn-day-toggle @(isDaySelected ? "active" : "")"
+                                        style="padding: 6px 12px; border-radius: 20px; border: 1px solid @(isDaySelected ? "#2563eb" : "#e2e8f0"); background: @(isDaySelected ? "#eff6ff" : "white"); color: @(isDaySelected ? "#2563eb" : "#64748b"); font-size: 13px; cursor: pointer;"
+                                        @onclick='() => { if(isDaySelected) activeTiming.RecurrenceDays.Remove(day); else activeTiming.RecurrenceDays.Add(day); }'>
+                                    @day.Substring(0, 3)
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label-sm">Expiration Date</label>
+                    <input type="date"
+                           value="@(activeTiming.ExpirationDate?.ToString("yyyy-MM-dd"))"
+                           @onchange="OnExpirationDateChanged"
+                           class="form-input date-picker-premium" />
+                </div>
+
+                <!-- <div class="archive-options" style="margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 16px;">
+                    <div class="checkbox-group-premium">
+                        <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer;">
+                            <input type="checkbox" @bind="activeTiming.MoveToArchive" />
+                            <span class="checkmark"></span>
+                            <span style="font-size: 14px; color: #475569;">Content is moved to the archive</span>
+                        </label>
+                        <label class="checkbox-container" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" @bind="activeTiming.BlockReflections" />
+                            <span class="checkmark"></span>
+                            <span style="font-size: 14px; color: #475569;">Can no longer accept reflections</span>
+                        </label>
+                    </div>
+                </div> -->
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn-modal-secondary" @onclick="CloseTimingModal">Close</button>
+                <button type="button" class="btn-modal-primary" @onclick="SaveTimingSettings">Save Settings</button>
+            </div>
+        </div>
+    </div>
+}

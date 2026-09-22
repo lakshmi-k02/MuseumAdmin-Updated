@@ -1,0 +1,18 @@
+@inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider Auth
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await Auth.GetAuthenticationStateAsync();
+
+        if (!(authState?.User?.Identity?.IsAuthenticated == true))
+        {
+            Nav.NavigateTo("/login", true);
+        }
+        else
+        {
+            Nav.NavigateTo("/not-found", true);
+        }
+    }
+}

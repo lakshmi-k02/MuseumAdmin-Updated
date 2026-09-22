@@ -1,0 +1,210 @@
+@using MuseumAdmin.Models
+@using MuseumAdmin.Services
+
+<div class="family-card-outer-premium @GetCardColorClass(Group.Id)" @onclick="HandleEditFamily"
+     style="cursor: pointer;">
+    <div class="family-header-row-premium">
+        <div class="family-intro-group-premium">
+            <div class="family-icon-box-themed-premium">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+            </div>
+            <div class="family-id-info-premium">
+                <div class="phone-display-row-premium">
+                    <span class="phone-label-premium">PHONE NUMBER</span>
+                    <span class="phone-val-premium">@MaskPhoneNumber(Group.PhoneNumber)</span>
+                </div>
+                <div class="parents-list-inline-premium">
+                    @if (Group.Parents.Any())
+                    {
+                        @foreach (var parent in Group.Parents)
+                        {
+                            <div class="parent-entry-premium">
+                                 <span class="badge-parent-premium">@(parent.IsPrimary ? "PRIMARY" : "CAREGIVER")</span>
+                                 <span class="parent-name-bold-premium">@parent.Name</span>
+                                 <button class="btn-micro-edit-premium" @onclick="() => OnEditParent.InvokeAsync(parent)" @onclick:stopPropagation>Edit</button>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="parent-entry-premium">
+                             <span class="badge-parent-premium">PRIMARY</span>
+                             <span class="parent-name-placeholder-premium">No name</span>
+                             <button class="btn-micro-add-premium" @onclick="() => OnAddParent.InvokeAsync(Group.Id)" @onclick:stopPropagation>Add Name</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="family-card-actions-premium">
+            @if (OnChat.HasDelegate)
+            {
+                <button class="btn-action-chat-premium" @onclick="HandleChatFamily" @onclick:stopPropagation
+                        title="Chat with family">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+                    </svg>
+                    Chat
+                </button>
+            }
+            @if (OnAssign.HasDelegate)
+            {
+                <button class="btn-action-assign-premium" @onclick="HandleAssignFamily" @onclick:stopPropagation
+                        title="Assign to family">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14"></path>
+                        <path d="M5 12h14"></path>
+                    </svg>
+                    Assign
+                </button>
+            }
+            <button class="btn-icon-primary-premium" @onclick="() => OnAddChild.InvokeAsync(Group.Id)"
+                    @onclick:stopPropagation title="Add child">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <line x1="19" y1="8" x2="19" y2="14"></line>
+                    <line x1="16" y1="11" x2="22" y2="11"></line>
+                </svg>
+            </button>
+            <button class="btn-icon-danger-premium" @onclick="() => OnDeleteGroup.InvokeAsync(Group.Id)"
+                    @onclick:stopPropagation title="Remove Family">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="children-grid-preview-premium">
+        @{
+            var visibleChildren = (Group.Children ?? new List<Child>())
+                .Where(c => !string.Equals(c.ContactGender, "Shadow", StringComparison.Ordinal))
+                .ToList();
+        }
+        @if (visibleChildren.Any())
+        {
+            var childrenToShow = isExpanded ? visibleChildren : visibleChildren.Take(3);
+
+            @foreach (var child in childrenToShow)
+            {
+                <div class="child-tile-compact-premium" @onclick="() => OnEditChild.InvokeAsync(child)"
+                     @onclick:stopPropagation>
+                    <div class="tile-avatar-sm-premium">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                    </div>
+                    <div class="tile-info-sm-premium">
+                        <span class="child-name-sm-premium">@(string.IsNullOrWhiteSpace(child.Name) ? "No Name" :
+                                                child.Name)</span>
+                            <span class="child-age-sm-premium">@child.Age yrs</span>
+                        </div>
+                        <div class="tile-chevron-sm-premium">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </div>
+                    </div>
+                }
+
+                @if (visibleChildren.Count > 3)
+                {
+                    <div class="expansion-row-families @(isExpanded ? "is-expanded" : "")" style="margin-top: 12px;">
+                        <div class="expansion-badge-premium" @onclick="ToggleExpand" @onclick:stopPropagation>
+                            @if (isExpanded)
+                            {
+                                @("Show less")
+                            }
+                            else
+                            {
+                                @($"+{visibleChildren.Count - 3} more members")
+                            }
+                            <svg class="expansion-icon-premium" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.5">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+@code {
+    [Parameter]
+    public FamilyGroup Group { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback<FamilyGroup> OnEditFamily { get; set; }
+
+    [Parameter]
+    public EventCallback<Parent> OnEditParent { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnAddParent { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnAddChild { get; set; }
+
+    [Parameter]
+    public EventCallback<Child> OnEditChild { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnDeleteGroup { get; set; }
+
+    [Parameter]
+    public EventCallback<FamilyGroup> OnChat { get; set; }
+
+    [Parameter]
+    public EventCallback<FamilyGroup> OnAssign { get; set; }
+
+    private bool isExpanded = false;
+
+    private void ToggleExpand()
+    {
+        isExpanded = !isExpanded;
+    }
+
+    private async Task HandleEditFamily()
+    {
+        await OnEditFamily.InvokeAsync(Group);
+    }
+
+    private async Task HandleChatFamily()
+    {
+        if (OnChat.HasDelegate)
+        {
+            await OnChat.InvokeAsync(Group);
+        }
+    }
+
+    private async Task HandleAssignFamily()
+    {
+        if (OnAssign.HasDelegate)
+        {
+            await OnAssign.InvokeAsync(Group);
+        }
+    }
+
+    private string GetCardColorClass(int id)
+    {
+        var colors = new[] { "fam-color-indigo-premium", "fam-color-amber-premium", "fam-color-purple-premium",
+"fam-color-blue-premium" };
+        return colors[Math.Abs(id * 7) % colors.Length];
+    }
+
+    private string MaskPhoneNumber(string? phone)
+    {
+        if (string.IsNullOrEmpty(phone)) return "No Phone";
+        if (phone.Length < 4) return phone;
+        return "XXXX-XXX-" + phone[^4..];
+    }
+}

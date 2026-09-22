@@ -1,0 +1,28 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject MuseumAdmin.Services.AppState AppState
+@inject MuseumAdmin.Services.ChatService ChatService
+
+<!-- Main container -->
+<div class="admin-layout">
+    <NavMenu />
+
+    <main class="main-content" id="main-content">
+        <!-- The actual page content renders here -->
+        @Body
+    </main>
+</div>
+
+<ToastContainer />
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Initialize global state and notification counts
+            await AppState.InitializeUnreadCountsAsync(ChatService, JS);
+        }
+    }
+}

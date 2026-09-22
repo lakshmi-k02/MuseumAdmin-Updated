@@ -1,0 +1,298 @@
+@inject NavigationManager NavigationManager
+@inject MuseumAdmin.Services.AppState AppState
+
+<aside class="sidebar" id="sidebar">
+
+    <!-- Sidebar Header -->
+    <div class="sidebar-header">
+        <div class="sidebar-logo">
+            <img src="/images/memby-logo-1.png" alt="Memby logo" width="48" height="38" style="
+                background:#ffffff;
+                border-radius:4px;
+                padding:2px;
+            " />
+            <span class="sidebar-logo-text">memby.</span>
+        </div>
+        
+        <!-- Standard toggle (collapse) -->
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+                <!-- Left-arrow (used for collapsing/expanding sidebar) - modern chevron -->
+                <svg class="left-arrow-icon dropdown-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="15 6 9 12 15 18"></polyline>
+                </svg>
+            <!-- Close (X) icon - shown when mobile-open -->
+            <svg class="close-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+
+        <!-- Expand Button (Visible only when collapsed) -->
+        <button id="sidebarExpand" class="sidebar-expand-btn" aria-label="Expand sidebar" title="Expand sidebar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <!-- Chevron Right -->
+                <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+        </button>
+    </div>
+
+        <!-- Sidebar Navigation -->
+        <div class="sidebar-scroll">
+            <nav class="sidebar-nav">
+
+    @if (AppState.Role != "Therapist")
+    {
+        <!-- CORE -->
+        <div class="nav-section">
+            <div class="nav-section-title">Core</div>
+
+            <a href="/home" class="nav-item @(IsActive("/home") ? "active" : "")">
+                <span class="nav-item-icon">🏠</span>
+                <span class="nav-item-text">Home</span>
+            </a>
+        </div>
+    }
+
+    <!-- CARE DOMAIN -->
+    <div class="nav-section">
+        <div class="nav-section-title">Care</div>
+
+        <a href="/dashboard" class="nav-item @(IsActive("/dashboard") ? "active" : "")">
+            <span class="nav-item-icon">📊</span>
+            <span class="nav-item-text">Dashboard</span>
+        </a>
+
+        <a href="/programs" class="nav-item @(IsActive("/programs") ? "active" : "")">
+            <span class="nav-item-icon">🧸</span>
+            <span class="nav-item-text">Active Programs</span>
+        </a>
+
+        <a href="/check-in" class="nav-item @(IsActive("/check-in") ? "active" : "")">
+            <span class="nav-item-icon">📋</span>
+            <span class="nav-item-text">Check-in Form</span>
+        </a>
+    </div>
+
+    @if (AppState.Role != "Therapist")
+    {
+        <!-- EXPERIENCE DOMAIN -->
+        <div class="nav-section">
+            <div class="nav-section-title">Experience</div>
+
+            <a href="/exhibits" class="nav-item @(IsActive("/exhibits") ? "active" : "")">
+                <span class="nav-item-icon">🎨</span>
+                <span class="nav-item-text">Exhibits</span>
+            </a>
+
+            <a href="/mapping" class="nav-item @(IsActive("/mapping") ? "active" : "")">
+                <span class="nav-item-icon">🗺️</span>
+                <span class="nav-item-text">Mapping</span>
+            </a>
+
+            <a href="/voice" class="nav-item @(IsActive("/voice") ? "active" : "")">
+                <span class="nav-item-icon">🎤</span>
+                <span class="nav-item-text">Voice</span>
+            </a>
+        </div>
+    }
+
+    <!-- SYSTEM / ADMIN -->
+    <div class="nav-section">
+        <div class="nav-section-title">System</div>
+
+        <a href="/users" class="nav-item @(IsActive("/users") ? "active" : "")">
+            <span class="nav-item-icon">👥</span>
+            <span class="nav-item-text">Users</span>
+        </a>
+        <a href="/connect" class="nav-item @(IsActive("/connect") ? "active" : "")">
+            <span class="nav-item-icon">🔗</span>
+            <span class="nav-item-text">Connect</span>
+        </a>
+        <a href="/settings" class="nav-item @(IsActive("/settings") ? "active" : "")">
+            <span class="nav-item-icon">⚙️</span>
+            <span class="nav-item-text">Settings</span>
+        </a>
+        @if (AppState.Role != "Therapist")
+        {
+            <a href="/admin" class="nav-item @(IsActive("/admin") ? "active" : "")">
+                <span class="nav-item-icon">🛠️</span>
+                <span class="nav-item-text">Admin</span>
+            </a>
+        }
+    </div>
+
+
+            </nav>
+        </div>
+
+</aside>
+
+<script>
+    (function(){
+        function updateExpandBtn(){
+            var sidebar = document.getElementById('sidebar');
+            var expand = document.getElementById('sidebarExpand');
+            if(!sidebar || !expand) return;
+            if(sidebar.classList.contains('collapsed')){
+                expand.style.opacity = '1';
+                expand.style.pointerEvents = 'auto';
+            } else {
+                expand.style.opacity = '';
+                expand.style.pointerEvents = '';
+            }
+        }
+
+        function localToggle(){
+            var sidebar = document.getElementById('sidebar');
+            if(!sidebar) return;
+            sidebar.classList.toggle('collapsed');
+            updateExpandBtn();
+        }
+
+        function localExpand(){
+            var sidebar = document.getElementById('sidebar');
+            if(!sidebar) return;
+            sidebar.classList.remove('collapsed');
+            updateExpandBtn();
+        }
+
+        function mobileToggle(){
+            var sidebar = document.getElementById('sidebar');
+            if(!sidebar) return;
+            sidebar.classList.toggle('mobile-open');
+            updateExpandBtn();
+        }
+
+        document.addEventListener('DOMContentLoaded', function(){
+            updateExpandBtn();
+
+            var btn = document.getElementById('sidebarToggle');
+            var expand = document.getElementById('sidebarExpand');
+
+            if(btn){
+                btn.addEventListener('click', function(e){
+                    var isMobile = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+                    if(isMobile){
+                        // Prefer app-level mobile toggle so overlay and body overflow are handled
+                        if(typeof window.toggleMobileSidebar === 'function'){
+                            try{ window.toggleMobileSidebar(); }catch(err){
+                                // Fallback to local toggle below
+                            }
+                        } else if(typeof window.toggleSidebar === 'function' && window.toggleSidebar !== localToggle){
+                            try{ window.toggleSidebar(); }catch(err){}
+                        }
+
+                        // If app-level toggle wasn't available, manage classes locally
+                        var sidebar = document.getElementById('sidebar');
+                        var overlay = document.getElementById('sidebarOverlay');
+                        if(sidebar){
+                            if(sidebar.classList.contains('mobile-open')){
+                                sidebar.classList.remove('mobile-open');
+                                if(sidebar.style) sidebar.style.transform = 'translateX(-100%)';
+                                if(overlay) overlay.classList.remove('active');
+                                document.body.style.overflow = '';
+                            } else {
+                                sidebar.classList.add('mobile-open');
+                                if(sidebar.style) sidebar.style.transform = 'translateX(0)';
+                                if(overlay) overlay.classList.add('active');
+                                document.body.style.overflow = 'hidden';
+                            }
+                        }
+
+                        updateExpandBtn();
+                        e.stopPropagation();
+                    } else {
+                        if(typeof window.toggleSidebar === 'function' && window.toggleSidebar !== localToggle){
+                            window.toggleSidebar();
+                        } else {
+                            localToggle();
+                        }
+                    }
+                });
+
+                // Ensure clicking/tapping the close-icon (X) always closes the mobile sidebar
+                var closeSvg = btn.querySelector('.close-icon');
+                if(closeSvg){
+                    closeSvg.addEventListener('click', function(ev){
+                        // Prefer app-level close so overlay is removed
+                        if(typeof window.closeMobileSidebar === 'function'){
+                            try{ window.closeMobileSidebar(); }catch(err){}
+                        } else if(typeof window.toggleMobileSidebar === 'function'){
+                            try{ window.toggleMobileSidebar(); }catch(err){}
+                        } else {
+                            var sidebar = document.getElementById('sidebar');
+                            var overlay = document.getElementById('sidebarOverlay');
+                            if(sidebar && sidebar.classList.contains('mobile-open')){
+                                sidebar.classList.remove('mobile-open');
+                                if(sidebar.style) sidebar.style.transform = 'translateX(-100%)';
+                            }
+                            if(overlay) overlay.classList.remove('active');
+                            document.body.style.overflow = '';
+                        }
+                        ev.stopPropagation();
+                    });
+                    // touchstart for better responsiveness on mobile
+                    closeSvg.addEventListener('touchstart', function(ev){
+                        if(typeof window.closeMobileSidebar === 'function'){
+                            try{ window.closeMobileSidebar(); }catch(err){}
+                        } else if(typeof window.toggleMobileSidebar === 'function'){
+                            try{ window.toggleMobileSidebar(); }catch(err){}
+                        } else {
+                            var sidebar = document.getElementById('sidebar');
+                            var overlay = document.getElementById('sidebarOverlay');
+                            if(sidebar && sidebar.classList.contains('mobile-open')){
+                                sidebar.classList.remove('mobile-open');
+                                if(sidebar.style) sidebar.style.transform = 'translateX(-100%)';
+                            }
+                            if(overlay) overlay.classList.remove('active');
+                            document.body.style.overflow = '';
+                        }
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                    }, {passive:false});
+                }
+            }
+
+            if(expand){
+                expand.addEventListener('click', function(e){
+                    if(typeof window.toggleSidebar === 'function' && window.toggleSidebar !== localToggle){
+                        // prefer global toggle so main area updates as expected
+                        window.toggleSidebar();
+                        updateExpandBtn();
+                    } else {
+                        localExpand();
+                    }
+                });
+            }
+        });
+    })();
+</script>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+    }
+
+    private bool IsActive(string path, string? tabValue = null)
+    {
+        var absolutePath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var normalizedPath = path.TrimStart('/');
+        
+        // Get path without query string for base comparison
+        var pathOnly = absolutePath.Split('?')[0].TrimEnd('/');
+        
+        // Check if the base path matches
+        if (!pathOnly.Equals(normalizedPath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) return false;
+
+        // If no tab value specified, active only if current URI doesn't have a tab query or it's 'modules' (default)
+        if (string.IsNullOrEmpty(tabValue))
+        {
+            return !NavigationManager.Uri.Contains("tab=") || NavigationManager.Uri.Contains("tab=modules", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // If tab value specified, active only if current URI has THAT tab
+        return NavigationManager.Uri.Contains($"tab={tabValue}", StringComparison.OrdinalIgnoreCase);
+    }
+}
+

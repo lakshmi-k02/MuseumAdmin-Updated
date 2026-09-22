@@ -1,0 +1,372 @@
+@page "/exhibits"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize]
+
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+@* Disabled in development: server-side per-user caching may block fresh reloads.
+    Re-enable in production if you want per-user server-side caching. *@
+@* @inject MuseumAdmin.Services.IUserCacheService UserCache *@
+@using Microsoft.AspNetCore.Components.Forms
+@using System.IO
+@using MuseumAdmin.Models.Exhibits
+@using MuseumAdmin.Services
+@inject ExhibitService ExhibitService
+@inject MuseumAdmin.Services.AppState AppState
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using MuseumAdmin.Components.Shared
+
+
+
+
+<style>
+/* Mobile-only filter collapse/expand behaviour (inline arrow next to status pills) */
+.mobile-filter-arrow { display: none; background: transparent; border: none; padding: 6px; border-radius: 6px; font-weight: 700; color: var(--color-text, #111827); cursor: pointer; }
+
+@@media (max-width: 640px) {
+    .mobile-filter-arrow { display: inline-flex; align-items: center; justify-content: center; }
+    .filter-container.mobile-collapsed {  overflow: hidden; position: relative; transition: max-height .25s ease; }
+    .filter-container.mobile-collapsed::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 24px; background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,1)); pointer-events: none; }
+    .filter-container.mobile-expanded { max-height: 2000px; transition: max-height .25s ease; }
+
+    /* When collapsed, hide non-status filter groups on mobile */
+    .filter-container.mobile-collapsed .date-filters,
+    .filter-container.mobile-collapsed .search-filter,
+    .filter-container.mobile-collapsed .filter-divider { display: none !important; }
+
+    .filter-group.status-filters { display: block; }
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .status-pills { display: flex; align-items: center; flex-wrap: wrap; }
+
+    .mobile-filter-arrow .arrow { display: inline-block; transform: rotate(0deg); transition: transform .18s ease; }
+    .filter-container.mobile-expanded .mobile-filter-arrow .arrow { transform: rotate(180deg); }
+}
+</style>
+
+
+
+
+
+
+<!-- Main Content Area Wrapper -->
+<TopBar Title="My Exhibits" 
+        ButtonText="Create Exhibit" 
+        OnButtonClick="HandleAddContent"
+        OnMobileMenuToggle="ToggleMobileSidebar" />
+
+<div>
+
+    @if (IsLoading)
+    {
+        <div class="page-loader-overlay" role="status" aria-live="polite">
+            <div class="page-loader-card">
+                <div class="loader-ring" aria-hidden="true"></div>
+                <div>
+                    <div class="loader-text">Loading exhibits</div>
+                    <div class="loader-sub">Fetching latest data — this usually takes a moment</div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Content Container -->
+    <div class="content-container">
+
+        <!-- Page Header -->
+        <div class="page-header">
+            <p class="page-description">
+               Manage all exhibits in your museum, including traveling exhibits
+            </p>
+        </div>
+
+        <!-- Modern Filter Bar (following Home.razor pattern) -->
+        <div class="filter-container @(mobileFiltersExpanded ? "mobile-expanded" : "mobile-collapsed")">
+            
+            <div class="filter-group status-filters">
+                <div class="status-row">
+                    <div class="status-pills">
+                        <button type="button" class="filter-tab @(string.IsNullOrEmpty(SelectedStatus) ? "active" : "")" @onclick='() => SelectedStatus = ""'>
+                            All Status
+                        </button>
+                        <button type="button" class="filter-tab @(SelectedStatus == "Active" ? "active" : "")" @onclick='() => SelectedStatus = "Active"'>
+                            Active
+                        </button>
+                        <button type="button" class="filter-tab @(SelectedStatus == "Draft" ? "active" : "")" @onclick='() => SelectedStatus = "Draft"'>
+                            Draft
+                        </button>
+                    </div>
+
+                    <button class="mobile-filter-arrow mobile-only" @onclick="ToggleFiltersMobile">
+                        <svg class="dropdown-chevron arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="filter-divider"></div>
+
+            <div class="filter-group search-filter">
+                <div class="modern-search-wrapper">
+                    <svg class="search-icon-left" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="7"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input class="modern-search-input" 
+                           type="text" 
+                           placeholder="Search exhibits by name..." 
+                           @bind="SearchText"
+                           @bind:event="oninput" />
+                    
+                    @if (!string.IsNullOrEmpty(SearchText))
+                    {
+                        <button type="button" class="clear-search-btn" @onclick='() => SearchText = ""' title="Clear search">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (SelectedCount > 0)
+        {
+            <div class="bulk-toolbar-floating">
+                <div class="bulk-count">
+                    @SelectedCount exhibit selected
+                </div>
+                <div class="bulk-actions-group">
+                    <button class="bulk-btn secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        Bulk Edit
+                    </button>
+                    <button class="bulk-btn secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        Duplicate
+                    </button>
+                    <button class="bulk-btn danger-solid">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        Delete
+                    </button>
+                </div>
+                <button class="btn-close-toolbar" @onclick="ClearSelection">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+        }
+
+        <!-- Exhibits Table Card -->
+        <div class="card table-card">
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-col">
+                                <input type="checkbox"
+                                       checked="@IsAllSelected"
+                                       @onchange="ToggleSelectAll" />
+                            </th>
+                            <th>NAME</th>
+                            <th>STATUS</th>
+                            <th>TRAVELING</th>
+                            <th>LOCAL DISPLAY</th>
+                            <th>MUSEUM CREATOR</th>
+                            <th class="actions-col">ACTIONS</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @foreach (var item in PagedExhibits)
+                        {
+                            <tr class="@(item.IsSelected ? "row-selected" : "")">
+                                <td class="checkbox-col">
+                                    <input type="checkbox"
+                                           checked="@item.IsSelected"
+                                           @onchange="() => ToggleRow(item)" />
+                                </td>
+
+                                <td class="name-cell">@item.ExhibitName</td>
+
+                                <td>
+                                    <span class="status-badge @(item.Status.ToLower())">
+                                        @item.Status
+                                    </span>
+                                </td>
+
+                                <td>@item.Travelling</td>
+
+                                <td>@(string.IsNullOrWhiteSpace(item.LocalDisplay) ? "None" : item.LocalDisplay)</td>
+
+                                <td>@item.MuseumCreator</td>
+
+                                <td class="actions-col">
+                                    <div class="table-actions">
+                                        <button type="button" class="action-link" @onclick="() => EditExhibit(item.Id)">Edit</button>
+                                        <!-- <button class="btn-icon">⋮</button> -->
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination-container">
+                <Pagination TotalCount="FilteredExhibits.Count" PageSize="@pageSize" CurrentPage="@currentPage"
+                            OnPageChanged="GoToPage" OnPageSizeChanged="SetPageSize" />
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // -----------------------------
+    // UI State
+    // -----------------------------
+    private string SearchText = string.Empty;
+    private string SelectedStatus = string.Empty;
+    private bool mobileFiltersExpanded = false;
+
+    private bool IsLoading = true;
+    private string? ErrorMessage;
+
+    // -----------------------------
+    // Data
+    // -----------------------------
+    private List<ExhibitDto> ExhibitList = new();
+
+    // -----------------------------
+    // Lifecycle
+    // -----------------------------
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+        try
+        {
+            IsLoading = true;
+
+            var data = await ExhibitService.GetExhibitsAsync(AppState.MuseumId);
+
+            // ✅ Default Status to "Active" when API does not provide it
+            ExhibitList = data.Select(e =>
+            {
+                e.Status ??= "Active";
+                e.MuseumCreator ??= "House of Shine";
+                if (string.IsNullOrWhiteSpace(e.Travelling))
+                    e.Travelling = "No";
+
+  
+                return e;
+            }).ToList();
+            RecalcTotalPages();
+        }
+        catch
+        {
+            ErrorMessage = "Unable to load exhibits.";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    // -----------------------------
+    // Computed Properties
+    // -----------------------------
+    private List<ExhibitDto> FilteredExhibits =>
+        ExhibitList
+            .Where(e =>
+                (string.IsNullOrWhiteSpace(SearchText) ||
+                 e.ExhibitName.Contains(SearchText, StringComparison.OrdinalIgnoreCase)) &&
+                (string.IsNullOrWhiteSpace(SelectedStatus) ||
+                 e.Status == SelectedStatus))
+            .ToList();
+
+    // Pagination state
+    private int pageSize = 20;
+    private int currentPage = 1;
+    private int totalPages = 1;
+
+    private List<ExhibitDto> PagedExhibits =>
+        FilteredExhibits.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+
+    private void RecalcTotalPages()
+    {
+        var count = FilteredExhibits.Count;
+        totalPages = Math.Max(1, (int)Math.Ceiling(count / (double)pageSize));
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+    }
+
+    private void GoToPage(int page)
+    {
+        if (page < 1) page = 1;
+        if (page > totalPages) page = totalPages;
+        currentPage = page;
+    }
+
+    private void SetPageSize(int newSize)
+    {
+        if (newSize <= 0) return;
+        pageSize = newSize;
+        currentPage = 1;
+        RecalcTotalPages();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private int SelectedCount => ExhibitList.Count(x => x.IsSelected);
+    private bool IsAllSelected =>
+        ExhibitList.Count > 0 && ExhibitList.All(x => x.IsSelected);
+
+    // -----------------------------
+    // Selection Logic
+    // -----------------------------
+    private void ToggleRow(ExhibitDto row)
+    {
+        row.IsSelected = !row.IsSelected;
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if (e.Value is bool select)
+        {
+            ExhibitList.ForEach(x => x.IsSelected = select);
+        }
+    }
+
+    private void ClearSelection()
+    {
+        ExhibitList.ForEach(x => x.IsSelected = false);
+    }
+
+    // -----------------------------
+    // Mobile / UI Actions
+    // -----------------------------
+    private void ToggleFiltersMobile()
+    {
+        mobileFiltersExpanded = !mobileFiltersExpanded;
+    }
+
+    private async Task HandleAddContent()
+    {
+        // Navigate to the create-exhibit route when Create Exhibit is clicked
+        NavigationManager.NavigateTo("/create-exhibit");
+        await Task.CompletedTask;
+    }
+
+    private void EditExhibit(int id)
+    {
+        // Security: only send the numeric ID in the URL. The form page
+        // will fetch the exhibit data server-side (avoids moving PHI in navigation state).
+        NavigationManager.NavigateTo($"/edit-exhibit/{id}");
+    }
+
+    private void ToggleMobileSidebar()
+    {
+        // Implement sidebar toggle if required
+    }
+}

@@ -1,0 +1,949 @@
+@page "/check-in"
+@using MuseumAdmin.Models
+@using MuseumAdmin.Components.Shared
+@using Microsoft.AspNetCore.Authorization
+@using System.Net
+@using System.Net.Http.Json
+@using System.Text.Json
+@attribute [Authorize]
+@inject MuseumAdmin.Services.AppState AppState
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+<div class="fade-in">
+    @if (isSavingCustomForm)
+    {
+        <div class="busy-screen-overlay">
+            <div class="busy-content">
+                <div class="loading-spinner-large"></div>
+                <h3>Saving Custom Check-In...</h3>
+                <p>Syncing your check-in form. Please wait.</p>
+            </div>
+        </div>
+    }
+
+    <TopBar Title="Care Settings" Subtitle="Check-In Form" ShowButton="false" />
+
+    <div class="care-checkin-wrapper">
+        @if (isLoadingForm)
+        {
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <p>Loading check-in form...</p>
+            </div>
+        }
+        else
+        {
+
+        <!-- Mode Toggle -->
+        <div class="checkin-mode-bar">
+            <span class="checkin-mode-label">Form Mode</span>
+            <div class="mode-toggle-group">
+                <button type="button" class="mode-toggle-btn @(useDefault ? "active" : "")" @onclick="SetDefault">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    Default
+                </button>
+                <button type="button" class="mode-toggle-btn @(!useDefault ? "active" : "")" @onclick="SetCustom">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    Custom
+                </button>
+            </div>
+
+            @if (!useDefault)
+            {
+                @if (customForms.Count > 0)
+                {
+                    <div class="custom-form-selector-wrapper">
+                        <select class="form-select-dropdown" value="@currentForm.Id" @onchange="OnCustomFormSelected">
+                            @foreach (var f in customForms)
+                            {
+                                <option value="@f.Id">@(string.IsNullOrWhiteSpace(f.Title) ? "Untitled Form" : f.Title)</option>
+                            }
+                        </select>
+                        <div class="select-chevron">
+                            <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                                <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                    </div>
+                }
+
+                <button type="button" class="btn-reset-default" @onclick="ResetToDefault" title="Revert to system default">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="1 4 1 10 7 10"></polyline>
+                        <path d="M3.51 15a9 9 0 1 0 .49-3.54"></path>
+                    </svg>
+                    Reset to default
+                </button>
+                
+                <button type="button" class="btn-add-new-form-header" @onclick="AddNewForm" title="Create new blank form">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Add New Form
+                </button>
+            }
+        </div>
+
+        <!-- Default View -->
+        @if (useDefault)
+        {
+            <div class="default-preview-card fade-in">
+                <div class="default-preview-header">
+                    <!-- Teal circular avatar (RTM style) -->
+                    <div class="default-preview-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="default-preview-title">System Default Check-In</h3>
+                        <p class="default-preview-sub">Managed by admin · applied to all therapists</p>
+                    </div>
+                    <!-- Ghost preview button (RTM btng) -->
+                    <button type="button" class="btn-preview-dedicated" @onclick="TogglePatientPreview">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                        Patient preview
+                    </button>
+                    <!-- RTM-style teal badge with dot (via CSS ::before) -->
+                    <span class="badge-default-pill">Active</span>
+                </div>
+
+                <!-- Micro-label section header -->
+                <div class="questions-section-label">Questions — @defaultQuestions.Count total</div>
+
+                <!-- Questions list (admin summary view) -->
+                <div class="default-questions-list">
+                    @foreach (var (q, i) in defaultQuestions.Select((item, idx) => (item, idx)))
+                    {
+                        <div class="default-q-row">
+                            <!-- Teal circular number avatar (RTM style) -->
+                            <span class="default-q-num">@(i + 1)</span>
+                            <div class="default-q-content">
+                                <span class="default-q-text">@q.Text</span>
+                                <span class="default-q-type">@q.Type</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="default-preview-footer">
+                    <span class="footer-question-count">@defaultQuestions.Count question@(defaultQuestions.Count == 1 ? "" : "s") · read-only</span>
+                    <button type="button" class="btn-switch-custom" @onclick="SetCustom">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Customise this form
+                    </button>
+                </div>
+            </div>
+
+            @if (showPatientPreview)
+            {
+                <!-- Patient Preview Modal -->
+                <div class="preview-modal-overlay" @onclick="TogglePatientPreview">
+                    <div class="preview-modal-container" @onclick:stopPropagation>
+                        <div class="preview-modal-header">
+                            <div class="modal-header-left">
+                                <!-- Teal circular icon replaces emoji, RTM style -->
+                                <div class="modal-preview-icon">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                         stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                        <circle cx="12" cy="12" r="3"></circle>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="modal-title">Patient Preview</h3>
+                                    <p class="modal-subtitle">Simulated patient view</p>
+                                </div>
+                            </div>
+                            <!-- Circular ghost close button (RTM style) -->
+                            <button type="button" class="btn-modal-close" @onclick="TogglePatientPreview">&times;</button>
+                        </div>
+                        
+                        <div class="patient-preview-panel">
+                            <div class="patient-preview-chrome">
+                                <div class="preview-device-bar">
+                                    <span class="preview-device-dot"></span>
+                                    <span class="preview-device-dot"></span>
+                                    <span class="preview-device-dot"></span>
+                                    <span class="preview-device-label">Patient View</span>
+                                </div>
+                            </div>
+                            <div class="patient-form-preview">
+                                <div class="patient-form-header">
+                                    <h3>Check-In Form</h3>
+                                    <p>Please take a moment to answer the following questions before your session.</p>
+                                </div>
+
+                                @foreach (var (q, i) in defaultQuestions.Select((item, idx) => (item, idx)))
+                                {
+                                    <div class="patient-q-card">
+                                        <label class="patient-q-label">
+                                            <span class="patient-q-number">@(i + 1).</span> @q.Text
+                                        </label>
+
+                                        @if (q.Type == "Likert Scale")
+                                        {
+                                            <div class="patient-likert">
+                                                @for (int li = 1; li <= 5; li++)
+                                                {
+                                                     var previewLabel = GetLikertLabel(q, li);
+                                                     var circleContent = q.LikertScalePreset == "satisfaction_5"
+                                                         ? li switch { 1 => "😭", 2 => "🙁", 3 => "😐", 4 => "🙂", 5 => "😁", _ => "" }
+                                                         : li.ToString();
+                                                     <div class="patient-likert-item">
+                                                         <div class="patient-likert-circle">@circleContent</div>
+                                                         <span class="patient-likert-label">@previewLabel</span>
+                                                     </div>
+                                                }
+                                            </div>
+                                        }
+                                        else if (q.Type == "Slider (0-10)")
+                                        {
+                                            <div class="patient-slider">
+                                                <span class="patient-slider-limit">@q.SliderMin</span>
+                                                <div class="patient-slider-track">
+                                                    <div class="patient-slider-fill"></div>
+                                                    <div class="patient-slider-thumb"></div>
+                                                </div>
+                                                <span class="patient-slider-limit">@q.SliderMax</span>
+                                            </div>
+                                        }
+                                        else if (q.Type == "Yes / No")
+                                        {
+                                            <div class="patient-yesno">
+                                                <button type="button" class="patient-yesno-btn">Yes</button>
+                                                <button type="button" class="patient-yesno-btn">No</button>
+                                                <button type="button" class="patient-yesno-btn">Unsure</button>
+                                            </div>
+                                        }
+                                        else if (q.Type == "Long Text")
+                                        {
+                                            <textarea class="patient-textarea" disabled placeholder="Type your answer here..."
+                                                      rows="3"></textarea>
+                                        }
+                                        else if (q.Type == "Short Text")
+                                        {
+                                            <input type="text" class="patient-textinput" disabled
+                                                   placeholder="Type your answer here..." />
+                                        }
+                                        else if (q.Type == "Multiple Choice")
+                                        {
+                                            <div class="patient-choice-list">
+                                                @foreach (var option in GetEffectiveOptions(q))
+                                                {
+                                                    <label class="patient-choice-item"><input type="radio" disabled name="default-mc-@q.Id" /> @option</label>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="patient-generic-field">Interactive field for @q.Type</div>
+                                        }
+                                    </div>
+                                }
+
+                                <div class="patient-form-submit">
+                                    <button type="button" class="patient-submit-btn" disabled>Submit Check-In</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <!-- Custom Builder -->
+            <div class="fade-in">
+                <CheckInBuilder Form="currentForm" ShowAdminToggle="false" OnSave="HandleSave" />
+            </div>
+        }
+        }
+    </div>
+</div>
+
+@code {
+    private const string TherapistCheckInApiBase = "https://membyapi.azurewebsites.net/memby/api/therapist/check-in-form";
+    private const string AdminCheckInApiBase = "https://membyapi.azurewebsites.net/memby/api/admin/check-in-form";
+    private bool useDefault = true;
+    private bool showPatientPreview = false;
+    private bool isLoadingForm = false;
+    private bool isSavingCustomForm = false;
+    private int? defaultVersionNumber = null;
+    private CheckInForm currentForm = new();
+    private List<CheckInForm> customForms = new();
+    private List<CheckInQuestion> defaultQuestions = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+
+        if (AppState.Role != "Therapist")
+        {
+            NavigationManager.NavigateTo("/connect");
+            return;
+        }
+
+        await LoadCheckInFormsAsync();
+    }
+
+    private void SetDefault()
+    {
+        useDefault = true;
+        showPatientPreview = false;
+    }
+
+    private void TogglePatientPreview() => showPatientPreview = !showPatientPreview;
+
+    private void OnCustomFormSelected(ChangeEventArgs e)
+    {
+        var selectedId = e.Value?.ToString();
+        var selected = customForms.FirstOrDefault(f => f.Id == selectedId);
+        if (selected != null)
+        {
+            currentForm = selected;
+        }
+    }
+
+    private void SetCustom()
+    {
+        useDefault = false;
+        showPatientPreview = false;
+        // Seed the custom form from the default on first switch if no custom forms exist
+        if (!currentForm.IsAdminDefault && currentForm.Questions.Count == 0 && customForms.Count == 0)
+        {
+            currentForm.Title = "My Custom Check-In";
+            currentForm.Description = "Customised check-in form for my clients.";
+            foreach (var q in defaultQuestions)
+            {
+                currentForm.Questions.Add(CloneQuestion(q));
+            }
+            customForms.Add(currentForm);
+        }
+        else if (customForms.Count > 0 && currentForm.Questions.Count == 0)
+        {
+            currentForm = customForms.First();
+        }
+    }
+
+    private async Task HandleSave(CheckInForm savedForm)
+    {
+        try
+        {
+            isSavingCustomForm = true;
+            savedForm.IsAdminDefault = false;
+
+            var request = BuildCustomCheckInSaveRequest(savedForm);
+            
+            var payloadJson = JsonSerializer.Serialize(request, new JsonSerializerOptions { WriteIndented = true });
+            Console.WriteLine("--- SAVE FORM PAYLOAD ---");
+            Console.WriteLine(payloadJson);
+            Console.WriteLine("-------------------------");
+
+            var response = await Http.PostAsJsonAsync($"{TherapistCheckInApiBase}/custom", request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var updatedForm = new CheckInForm
+                {
+                    Id = savedForm.Id,
+                    Title = savedForm.Title,
+                    Description = savedForm.Description,
+                    IsAdminDefault = false,
+                    Questions = savedForm.Questions.Select(CloneQuestion).ToList()
+                };
+
+                currentForm = updatedForm;
+                
+                var existingIndex = customForms.FindIndex(f => f.Id == updatedForm.Id);
+                if (existingIndex >= 0)
+                {
+                    customForms[existingIndex] = updatedForm;
+                }
+                else
+                {
+                    customForms.Add(updatedForm);
+                }
+
+                useDefault = false;
+                await JS.InvokeVoidAsync("showToast", "Custom check-in form saved successfully.", "success");
+                return;
+            }
+
+            var errorBody = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"Custom check-in save failed: {(int)response.StatusCode} {errorBody}");
+            await JS.InvokeVoidAsync("showToast", "Failed to save custom check-in form.", "error");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving custom check-in form: {ex.Message}");
+            await JS.InvokeVoidAsync("showToast", "An error occurred while saving the custom check-in form.", "error");
+        }
+        finally
+        {
+            isSavingCustomForm = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ResetToDefault()
+    {
+        currentForm = new CheckInForm();
+        useDefault = true;
+        showPatientPreview = false;
+    }
+
+    /// <summary>
+    /// Resets the custom form to a blank state after user confirmation.
+    /// </summary>
+    private async Task AddNewForm()
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "Create a new custom check-in form?");
+        if (confirm)
+        {
+            currentForm = new CheckInForm { Title = "New Custom Form" };
+            customForms.Add(currentForm);
+            useDefault = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadCheckInFormsAsync()
+    {
+        try
+        {
+            isLoadingForm = true;
+
+            var therapistId = AppState.UserId;
+            var museumId = AppState.MuseumId > 0 ? AppState.MuseumId : 10;
+
+            var customFormsResponse = await LoadCustomFormsListAsync(therapistId);
+            if (customFormsResponse.Count > 0)
+            {
+                customForms = customFormsResponse;
+                currentForm = customForms.First();
+                useDefault = false;
+                defaultQuestions = await LoadDefaultQuestionsAsync(museumId);
+                return;
+            }
+
+            var defaultFormResponse = await LoadDefaultFormResponseAsync(museumId);
+            var defaultForm = defaultFormResponse == null ? null : MapApiCheckInForm(null, defaultFormResponse.Title, defaultFormResponse.Description, defaultFormResponse.Questions, true);
+            defaultQuestions = defaultForm?.Questions.Select(CloneQuestion).ToList() ?? new List<CheckInQuestion>();
+            defaultVersionNumber = defaultFormResponse?.VersionNumber;
+            useDefault = true;
+            currentForm = new CheckInForm();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading therapist check-in forms: {ex.Message}");
+            useDefault = true;
+            defaultQuestions = new List<CheckInQuestion>();
+            currentForm = new CheckInForm();
+        }
+        finally
+        {
+            isLoadingForm = false;
+        }
+    }
+
+    private async Task<List<CheckInForm>> LoadCustomFormsListAsync(int therapistId)
+    {
+        if (therapistId <= 0)
+        {
+            return new List<CheckInForm>();
+        }
+
+        var response = await Http.GetAsync($"{TherapistCheckInApiBase}/custom?therapistId={therapistId}");
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return new List<CheckInForm>();
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"Custom check-in load failed: {(int)response.StatusCode} {errorBody}");
+            return new List<CheckInForm>();
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        try
+        {
+            // First try parsing as a list of forms
+            var list = JsonSerializer.Deserialize<List<TherapistCheckInFormResponse>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (list != null && list.Count > 0)
+            {
+                return list.Select(p => MapApiCheckInForm(p.Id, p.Title, p.Description, p.Questions, false)).ToList();
+            }
+        }
+        catch
+        {
+            try
+            {
+                // Fallback to single form if it's not an array
+                var single = JsonSerializer.Deserialize<TherapistCheckInFormResponse>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (single != null)
+                {
+                    return new List<CheckInForm> { MapApiCheckInForm(single.Id, single.Title, single.Description, single.Questions, false) };
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing custom check-in forms: {ex.Message}");
+            }
+        }
+
+        return new List<CheckInForm>();
+    }
+
+    private async Task<CheckInForm?> LoadDefaultFormAsync(int museumId)
+    {
+        var payload = await LoadDefaultFormResponseAsync(museumId);
+        return payload == null ? null : MapApiCheckInForm(null, payload.Title, payload.Description, payload.Questions, true);
+    }
+
+    private async Task<DefaultCheckInFormResponse?> LoadDefaultFormResponseAsync(int museumId)
+    {
+        var response = await Http.GetAsync($"{AdminCheckInApiBase}/default?museumId={museumId}");
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"Default check-in load failed: {(int)response.StatusCode} {errorBody}");
+            return null;
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<DefaultCheckInFormResponse>();
+        return payload;
+    }
+
+    private async Task<List<CheckInQuestion>> LoadDefaultQuestionsAsync(int museumId)
+    {
+        var form = await LoadDefaultFormAsync(museumId);
+        return form?.Questions.Select(CloneQuestion).ToList() ?? new List<CheckInQuestion>();
+    }
+
+    private CheckInForm MapApiCheckInForm(string? id, string? title, string? description, List<ApiCheckInQuestionResponse>? questions, bool isAdminDefault)
+    {
+        return new CheckInForm
+        {
+            Id = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id,
+            Title = title ?? string.Empty,
+            Description = description ?? string.Empty,
+            IsAdminDefault = isAdminDefault,
+            Questions = (questions ?? new List<ApiCheckInQuestionResponse>())
+                .OrderBy(q => q.Order)
+                .Select(MapApiQuestion)
+                .ToList()
+        };
+    }
+
+    private CheckInQuestion MapApiQuestion(ApiCheckInQuestionResponse question)
+    {
+        var mapped = new CheckInQuestion
+        {
+            Id = Guid.TryParse(question.QuestionId ?? question.Id, out var questionId) ? questionId : Guid.NewGuid(),
+            Type = MapApiQuestionType(question.Type),
+            Text = question.Text ?? string.Empty,
+            IsRequired = question.IsRequired,
+            IncludeHintText = question.IncludeHintText,
+            HintText = question.HintText ?? string.Empty
+        };
+
+        ApplyQuestionSettings(mapped, question.Settings?.SettingsJson, question.Settings);
+        return mapped;
+    }
+
+    private static CheckInQuestion CloneQuestion(CheckInQuestion question) => new()
+    {
+        Id = question.Id,
+        Type = question.Type,
+        Text = question.Text,
+        IsRequired = question.IsRequired,
+        IncludeHintText = question.IncludeHintText,
+        HintText = question.HintText,
+        LikertScalePreset = question.LikertScalePreset,
+        LikertLeftLabel = question.LikertLeftLabel,
+        LikertRightLabel = question.LikertRightLabel,
+        LikertLabel2 = question.LikertLabel2,
+        LikertLabel3 = question.LikertLabel3,
+        LikertLabel4 = question.LikertLabel4,
+        SliderMin = question.SliderMin,
+        SliderMax = question.SliderMax,
+        Options = question.Options.ToList()
+    };
+
+    private IEnumerable<string> GetEffectiveOptions(CheckInQuestion question)
+    {
+        var options = question.Options
+            .Where(option => !string.IsNullOrWhiteSpace(option))
+            .ToList();
+
+        return options.Count > 0 ? options : new[] { "Option 1", "Option 2" };
+    }
+
+    private string GetLikertLabel(CheckInQuestion q, int index)
+    {
+        return index switch
+        {
+            1 => string.IsNullOrWhiteSpace(q.LikertLeftLabel) ? "Strongly disagree" : q.LikertLeftLabel,
+            2 => string.IsNullOrWhiteSpace(q.LikertLabel2) ? "Disagree" : q.LikertLabel2,
+            3 => string.IsNullOrWhiteSpace(q.LikertLabel3) ? "Neutral" : q.LikertLabel3,
+            4 => string.IsNullOrWhiteSpace(q.LikertLabel4) ? "Agree" : q.LikertLabel4,
+            5 => string.IsNullOrWhiteSpace(q.LikertRightLabel) ? "Strongly agree" : q.LikertRightLabel,
+            _ => string.Empty
+        };
+    }
+
+    private TherapistCheckInSaveRequest BuildCustomCheckInSaveRequest(CheckInForm form)
+    {
+        var formsToSave = new List<CheckInForm>();
+        bool found = false;
+        foreach (var f in customForms)
+        {
+            if (f.Id == form.Id)
+            {
+                formsToSave.Add(form);
+                found = true;
+            }
+            else
+            {
+                formsToSave.Add(f);
+            }
+        }
+        
+        if (!found)
+        {
+            formsToSave.Add(form);
+        }
+
+        return new TherapistCheckInSaveRequest
+        {
+            OwnerUserId = AppState.UserId,
+            Forms = formsToSave.Select(f => new TherapistCheckInSaveFormRequest
+            {
+                Id = f.Id,
+                Title = f.Title,
+                Description = f.Description,
+                BasedOnDefaultVersion = defaultVersionNumber,
+                Questions = f.Questions.Select((question, index) => new TherapistCheckInSaveQuestionRequest
+                {
+                    Id = question.Id == Guid.Empty ? Guid.NewGuid().ToString() : question.Id.ToString(),
+                    Order = index + 1,
+                    Type = MapBuilderQuestionTypeToApi(question.Type),
+                    Text = question.Text?.Trim() ?? string.Empty,
+                    IsRequired = question.IsRequired,
+                    IncludeHintText = question.IncludeHintText,
+                    HintText = question.HintText?.Trim() ?? string.Empty,
+                    Settings = BuildQuestionSettings(question)
+                }).ToList()
+            }).ToList()
+        };
+    }
+
+    private string MapBuilderQuestionTypeToApi(string? builderType) => builderType?.Trim() switch
+    {
+        "Short Text" => "short_text",
+        "Long Text" => "long_text",
+        "Yes / No" => "yes_no",
+        "Likert Scale" => "likert",
+        "Slider (0-10)" => "slider",
+        "Multiple Choice" => "multiple_choice",
+        "Star Rating" => "star_rating",
+        "Date" => "date",
+        _ => string.IsNullOrWhiteSpace(builderType) ? "short_text" : builderType.ToLowerInvariant().Replace(" ", "_")
+    };
+
+    private object BuildQuestionSettings(CheckInQuestion question)
+    {
+        Dictionary<string, object?> coreSettings = question.Type switch
+        {
+            "Likert Scale" => new Dictionary<string, object?>
+            {
+                ["preset"] = string.IsNullOrWhiteSpace(question.LikertScalePreset) ? "agreement_5" : question.LikertScalePreset,
+                ["leftLabel"] = string.IsNullOrWhiteSpace(question.LikertLeftLabel) ? "Strongly disagree" : question.LikertLeftLabel,
+                ["rightLabel"] = string.IsNullOrWhiteSpace(question.LikertRightLabel) ? "Strongly agree" : question.LikertRightLabel,
+                ["label2"] = string.IsNullOrWhiteSpace(question.LikertLabel2) ? "Disagree" : question.LikertLabel2,
+                ["label3"] = string.IsNullOrWhiteSpace(question.LikertLabel3) ? "Neutral" : question.LikertLabel3,
+                ["label4"] = string.IsNullOrWhiteSpace(question.LikertLabel4) ? "Agree" : question.LikertLabel4
+            },
+            "Slider (0-10)" => new Dictionary<string, object?>
+            {
+                ["min"] = question.SliderMin,
+                ["max"] = question.SliderMax
+            },
+            "Multiple Choice" => new Dictionary<string, object?>
+            {
+                ["options"] = question.Options
+                    .Where(option => !string.IsNullOrWhiteSpace(option))
+                    .Select(option => option.Trim())
+                    .ToList()
+            },
+            "Yes / No" => new Dictionary<string, object?>
+            {
+                ["allowUnsure"] = true
+            },
+            "Star Rating" => new Dictionary<string, object?>
+            {
+                ["maxStars"] = 5
+            },
+            "Date" => new Dictionary<string, object?>
+            {
+                ["includeTime"] = false
+            },
+            _ => new Dictionary<string, object?>()
+        };
+
+        var payloadSettings = new Dictionary<string, object?>(coreSettings)
+        {
+            ["settingsJson"] = JsonSerializer.Serialize(coreSettings)
+        };
+
+        return payloadSettings;
+    }
+
+    private string MapApiQuestionType(string? apiType) => apiType?.Trim().ToLowerInvariant() switch
+    {
+        "short_text" => "Short Text",
+        "long_text" => "Long Text",
+        "yes_no" => "Yes / No",
+        "likert" => "Likert Scale",
+        "slider" => "Slider (0-10)",
+        "multiple_choice" => "Multiple Choice",
+        "star_rating" => "Star Rating",
+        "date" => "Date",
+        _ => string.IsNullOrWhiteSpace(apiType) ? "Short Text" : apiType
+    };
+
+    private void ApplyQuestionSettings(CheckInQuestion question, string? settingsJson, ApiCheckInQuestionSettingsResponse? settings)
+    {
+        if (string.IsNullOrWhiteSpace(settingsJson) && settings != null)
+        {
+            settingsJson = settings.SettingsJson;
+
+            if (string.IsNullOrWhiteSpace(settingsJson))
+            {
+                var fallbackSettings = new Dictionary<string, object?>();
+
+                if (!string.IsNullOrWhiteSpace(settings.Preset))
+                {
+                    fallbackSettings["preset"] = settings.Preset;
+                }
+
+                if (!string.IsNullOrWhiteSpace(settings.LeftLabel))
+                {
+                    fallbackSettings["leftLabel"] = settings.LeftLabel;
+                }
+
+                if (!string.IsNullOrWhiteSpace(settings.RightLabel))
+                {
+                    fallbackSettings["rightLabel"] = settings.RightLabel;
+                }
+
+                if (settings.Min.HasValue)
+                {
+                    fallbackSettings["min"] = settings.Min.Value;
+                }
+
+                if (settings.Max.HasValue)
+                {
+                    fallbackSettings["max"] = settings.Max.Value;
+                }
+
+                if (settings.Options?.Count > 0)
+                {
+                    fallbackSettings["options"] = settings.Options;
+                }
+
+                if (settings.AllowUnsure.HasValue)
+                {
+                    fallbackSettings["allowUnsure"] = settings.AllowUnsure.Value;
+                }
+
+                if (fallbackSettings.Count > 0)
+                {
+                    settingsJson = JsonSerializer.Serialize(fallbackSettings);
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(settingsJson))
+        {
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(settingsJson);
+            var root = doc.RootElement;
+
+            if (question.Type == "Slider (0-10)")
+            {
+                if (root.TryGetProperty("min", out var minValue) && minValue.TryGetInt32(out var min))
+                {
+                    question.SliderMin = min;
+                }
+
+                if (root.TryGetProperty("max", out var maxValue) && maxValue.TryGetInt32(out var max))
+                {
+                    question.SliderMax = max;
+                }
+            }
+
+            if (question.Type == "Likert Scale" &&
+                root.TryGetProperty("preset", out var presetValue) &&
+                presetValue.ValueKind == JsonValueKind.String)
+            {
+                question.LikertScalePreset = presetValue.GetString() ?? question.LikertScalePreset;
+            }
+
+            if (question.Type == "Likert Scale" &&
+                root.TryGetProperty("leftLabel", out var leftLabelValue) &&
+                leftLabelValue.ValueKind == JsonValueKind.String)
+            {
+                question.LikertLeftLabel = leftLabelValue.GetString() ?? question.LikertLeftLabel;
+            }
+
+            if (question.Type == "Likert Scale" &&
+                root.TryGetProperty("rightLabel", out var rightLabelValue) &&
+                rightLabelValue.ValueKind == JsonValueKind.String)
+            {
+                question.LikertRightLabel = rightLabelValue.GetString() ?? question.LikertRightLabel;
+            }
+
+            if (question.Type == "Likert Scale" &&
+                root.TryGetProperty("label2", out var label2Value) &&
+                label2Value.ValueKind == JsonValueKind.String)
+            {
+                question.LikertLabel2 = label2Value.GetString() ?? question.LikertLabel2;
+            }
+
+            if (question.Type == "Likert Scale" &&
+                root.TryGetProperty("label3", out var label3Value) &&
+                label3Value.ValueKind == JsonValueKind.String)
+            {
+                question.LikertLabel3 = label3Value.GetString() ?? question.LikertLabel3;
+            }
+
+            if (question.Type == "Likert Scale" &&
+                root.TryGetProperty("label4", out var label4Value) &&
+                label4Value.ValueKind == JsonValueKind.String)
+            {
+                question.LikertLabel4 = label4Value.GetString() ?? question.LikertLabel4;
+            }
+
+            if (question.Type == "Multiple Choice" &&
+                root.TryGetProperty("options", out var optionsValue) &&
+                optionsValue.ValueKind == JsonValueKind.Array)
+            {
+                question.Options = optionsValue.EnumerateArray()
+                    .Where(item => item.ValueKind == JsonValueKind.String)
+                    .Select(item => item.GetString() ?? string.Empty)
+                    .ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error parsing therapist check-in settings for {question.Id}: {ex.Message}");
+        }
+    }
+
+    public class TherapistCheckInFormResponse
+    {
+        public string? Id { get; set; }
+        public string? FormId { get; set; }
+        public string? Title { get; set; }
+        public string? Description { get; set; }
+        public List<ApiCheckInQuestionResponse>? Questions { get; set; }
+    }
+
+    public class DefaultCheckInFormResponse
+    {
+        public int VersionNumber { get; set; }
+        public string? Title { get; set; }
+        public string? Description { get; set; }
+        public List<ApiCheckInQuestionResponse>? Questions { get; set; }
+    }
+
+    public class ApiCheckInQuestionResponse
+    {
+        public string? Id { get; set; }
+        public string? QuestionId { get; set; }
+        public int Order { get; set; }
+        public string? Type { get; set; }
+        public string? Text { get; set; }
+        public bool IsRequired { get; set; }
+        public bool IncludeHintText { get; set; }
+        public string? HintText { get; set; }
+        public ApiCheckInQuestionSettingsResponse? Settings { get; set; }
+    }
+
+    public class ApiCheckInQuestionSettingsResponse
+    {
+        public string? SettingsJson { get; set; }
+        public string? Preset { get; set; }
+        public string? LeftLabel { get; set; }
+        public string? RightLabel { get; set; }
+        public int? Min { get; set; }
+        public int? Max { get; set; }
+        public List<string>? Options { get; set; }
+        public bool? AllowUnsure { get; set; }
+    }
+
+    public class TherapistCheckInSaveRequest
+    {
+        public int OwnerUserId { get; set; }
+        public List<TherapistCheckInSaveFormRequest> Forms { get; set; } = new();
+    }
+
+    public class TherapistCheckInSaveFormRequest
+    {
+        public string? Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public int? BasedOnDefaultVersion { get; set; }
+        public List<TherapistCheckInSaveQuestionRequest> Questions { get; set; } = new();
+    }
+
+    public class TherapistCheckInSaveQuestionRequest
+    {
+        public string Id { get; set; } = string.Empty;
+        public int Order { get; set; }
+        public string Type { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public bool IsRequired { get; set; }
+        public bool IncludeHintText { get; set; }
+        public string HintText { get; set; } = string.Empty;
+        public object Settings { get; set; } = new { };
+    }
+}
+
+

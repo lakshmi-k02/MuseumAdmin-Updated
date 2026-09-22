@@ -1,0 +1,161 @@
+.page {
+    width: 100%;
+    min-height: 100vh;
+}
+
+/* Mirror the design system layout class so both work */
+.admin-layout {
+    display: flex;
+    min-height: 100vh;
+    background-color: var(--color-bg, #F9FAFB);
+}
+
+/* Ensure the rendered sidebar width and main margin stay in sync. */
+.admin-layout {
+    display: flex;
+    min-height: 100vh;
+    background-color: var(--color-bg, #F9FAFB);
+    overflow-x: hidden;
+    /* Prevent horizontal scroll */
+    width: 100%;
+    position: relative;
+}
+
+/* Render the sidebar as part of the flex layout (not fixed) so main sits next to it.
+   This overrides the global `.sidebar { position: fixed }` only for this layout. */
+#sidebar {
+    position: relative !important;
+    width: var(--sidebar-width) !important;
+    left: auto !important;
+    top: auto !important;
+    height: auto !important;
+    box-shadow: none !important;
+}
+
+.main-content {
+    /* Offset the main content so it starts after the sidebar.
+       Use a margin rather than relying on global/flexible layout so
+       this works even if the sidebar is positioned (fixed/absolute).
+       Defaults provided for the CSS variables to be safe. */
+    margin-left: var(--sidebar-width, 240px);
+    transition: margin-left 220ms ease;
+    flex: 1 1 auto;
+}
+
+/* Use flex-basis so main expands when sidebar shrinks (collapsed) */
+.admin-layout>#sidebar,
+.admin-layout>.sidebar {
+    flex: 0 0 var(--sidebar-width);
+    width: var(--sidebar-width);
+    transition: flex-basis var(--transition-base), width var(--transition-base);
+}
+
+.admin-layout>#sidebar.collapsed,
+.admin-layout>.sidebar.collapsed {
+    flex-basis: var(--sidebar-collapsed-width) !important;
+    width: var(--sidebar-collapsed-width) !important;
+}
+
+.admin-layout>.main-content {
+    flex: 1 1 auto;
+    width: auto;
+}
+
+/* When the sidebar is collapsed we want main to start after the
+   collapsed width. We target the sibling main element so this works
+   regardless of whether the sidebar is fixed or part of the flex flow. */
+.sidebar.collapsed+.main-content,
+#sidebar.collapsed+.main-content {
+    margin-left: var(--sidebar-collapsed-width, 72px);
+}
+
+/* Fallback: if the sidebar is a direct child and flex is working, allow
+   the flex rule to control layout (keeps original behaviour). */
+.admin-layout>#sidebar:not(.collapsed)~.main-content,
+.admin-layout>.sidebar:not(.collapsed)~.main-content {
+    margin-left: var(--sidebar-width, 240px);
+}
+
+/* Mobile: Hide sidebar by default, show on hamburger click */
+@media (max-width: 768px) {
+
+    /* Override desktop layout for mobile */
+    #sidebar,
+    .sidebar {
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        height: 100vh !important;
+        width: 280px !important;
+        max-width: 85vw;
+        /* Hide sidebar by default - completely off screen */
+        transform: translateX(-100%) !important;
+        visibility: visible !important;
+        /* Keep visible for transitions */
+        opacity: 1 !important;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1001;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15) !important;
+        /* Remove from flex layout */
+        flex: none !important;
+        flex-basis: auto !important;
+        /* Ensure it doesn't take up space */
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    /* Show sidebar when mobile-open class is added */
+    #sidebar.mobile-open,
+    .sidebar.mobile-open {
+        transform: translateX(0) !important;
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    /* Ensure sidebar is hidden when NOT mobile-open */
+    #sidebar:not(.mobile-open),
+    .sidebar:not(.mobile-open) {
+        transform: translateX(-100%) !important;
+        pointer-events: none !important;
+        /* Prevent interaction when hidden */
+    }
+
+    /* Ensure sidebar is visible and interactive only when mobile-open */
+    #sidebar.mobile-open,
+    .sidebar.mobile-open {
+        pointer-events: auto !important;
+    }
+
+    /* Main content takes full width on mobile */
+    .main-content {
+        margin-left: 0 !important;
+        width: auto !important;
+        /* Allow it to shrink/grow with padding */
+        max-width: 100%;
+    }
+
+    .admin-layout>#sidebar,
+    .admin-layout>.sidebar {
+        flex: none !important;
+        flex-basis: auto !important;
+        width: 280px !important;
+    }
+
+    .admin-layout>.main-content {
+        margin-left: 0 !important;
+        width: auto !important;
+        flex: 1 1 auto !important;
+    }
+
+    /* Override collapsed state on mobile */
+    .admin-layout>#sidebar.collapsed,
+    .admin-layout>.sidebar.collapsed {
+        flex-basis: auto !important;
+        width: 280px !important;
+        transform: translateX(-100%) !important;
+    }
+
+    .admin-layout>#sidebar.collapsed.mobile-open,
+    .admin-layout>.sidebar.collapsed.mobile-open {
+        transform: translateX(0) !important;
+    }
+}

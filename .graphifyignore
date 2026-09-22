@@ -1,0 +1,16 @@
+# Exclude build artifacts and dependencies
+bin/
+obj/
+node_modules/
+publish/
+.git/
+app.zip
+*.db
+*.pdb
+*.dll
+*.exe
+.vs/
+.vscode/
+therapytrack_rtm_mockup.html
+.gitignore
+Azure_deploy.sh

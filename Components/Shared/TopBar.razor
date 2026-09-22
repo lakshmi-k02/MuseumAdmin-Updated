@@ -1,0 +1,213 @@
+@using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject MuseumAdmin.Services.AppState AppState
+
+<header class="top-bar">
+    <div class="top-bar-left">
+        <!-- Mobile Hamburger Menu -->
+        <button class="mobile-menu-toggle" id="mobileMenuToggle" @onclick="HandleMobileMenuToggle" aria-label="Toggle menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+        
+        <!-- Mobile Banner -->
+        <div class="memby-banner mobile-only">
+            <div class="memby-banner-content mobile-only">
+                <img src="/images/memby-logo-1.png" alt="Memby logo" class="memby-banner-logo mobile-only" style="width: 46px; height: 42px; padding: 0;" />
+                <span class="memby-banner-text mobile-only" style="line-height: 1; margin-top: 4px;">memby.</span>
+            </div>
+        </div>
+
+        <div class="top-bar-heading">
+            <h1 class="top-bar-title">@Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <p class="top-bar-subtitle">@Subtitle</p>
+            }
+        </div>
+    </div>
+    
+    <div class="top-bar-right">
+        <!-- Action Button -->
+        @if (ShowButton && !string.IsNullOrEmpty(ButtonText))
+        {
+            <button class="btn btn-primary desktop-only" @onclick="OnButtonClick">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                @ButtonText
+            </button>
+        }
+
+        <!-- Notification -->
+        <div class="notification-wrapper">
+            <button class="notification-btn" @onclick="ToggleNotificationMenu" @onfocusout="CloseNotificationDelayed">
+                🔔
+                <span class="notification-badge">2</span>
+            </button>
+
+            @if (isNotificationMenuOpen)
+            {
+                <div class="notification-dropdown open">
+                    <div class="notification-header">Notifications</div>
+                    <!-- Placeholder notifications -->
+                    <div class="notification-item unread" @onclick='() => NavigationManager.NavigateTo("/programs/1059?programId=1")' style="cursor: pointer;">
+                        <strong>John Lune has completed day1 Excercies</strong>
+                        <span>Just now</span>
+                    </div>
+                    <div class="notification-item unread" @onclick='() => NavigationManager.NavigateTo("/programs/1058")' style="cursor: pointer;">
+                        <strong>Chloe Lune has completed breathing excercise</strong>
+                        <span>5 min ago</span>
+                    </div>
+                    <div class="notification-footer">View all</div>
+                </div>
+            }
+        </div>
+
+        <!-- User Menu Dropdown -->
+        <div class="user-menu-wrapper">
+            <button class="user-menu @(isUserMenuOpen ? "active" : "")" @onclick="ToggleUserMenu" title="@EffectiveDisplayName">
+                <div class="user-avatar">@(GetShortName(EffectiveDisplayName).Length > 0 ? GetShortName(EffectiveDisplayName).Substring(0, 1).ToUpper() : "A")</div>
+                <span class="user-name">@GetShortName(EffectiveDisplayName)</span>
+                <svg class="dropdown-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+
+            @if (isUserMenuOpen)
+            {
+                <div class="dropdown-overlay" @onclick="() => isUserMenuOpen = false"></div>
+                <div class="user-dropdown">
+                    <div class="user-dropdown-header">
+                        <span class="header-name">@GetShortName(EffectiveDisplayName)</span>
+                        <span class="header-role">@(string.IsNullOrWhiteSpace(AppState.Role) || AppState.Role == "User" ? "Admin" : AppState.Role)</span>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        Profile
+                    </button>
+                    <button class="dropdown-item" @onclick='() => NavigationManager.NavigateTo("/settings")'>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        Settings
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item danger" @onclick="HandleLogout">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                        Logout
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+</header>
+
+@code {
+    // Parameters for Content
+    [Parameter] public string Title { get; set; } = "Dashboard";
+    [Parameter] public string Subtitle { get; set; } = "";
+    [Parameter] public string ButtonText { get; set; } = "";
+    [Parameter] public bool ShowButton { get; set; } = true;
+    [Parameter] public string? DisplayName { get; set; }
+    [Parameter] public int NotificationCount { get; set; } = 3;
+
+    private string EffectiveDisplayName => !string.IsNullOrEmpty(DisplayName) ? DisplayName : (!string.IsNullOrEmpty(AppState.UserName) ? AppState.UserName : "Admin");
+
+    // Callbacks for Actions
+    [Parameter] public EventCallback OnButtonClick { get; set; }
+    [Parameter] public EventCallback OnMobileMenuToggle { get; set; }
+    [Parameter] public EventCallback OnLogout { get; set; }
+
+    // Internal UI State
+    private bool isUserMenuOpen = false;
+    private bool isNotificationMenuOpen = false;
+    private HashSet<int> selectedMessageIds = new();
+    private bool isOverlayOpen = false;
+    private bool isEditMode = false;
+    private int CurrentNotificationCount => AppState.TotalUnreadMessages;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppState.EnsureInitializedAsync();
+        AppState.OnChatUnreadChanged += HandleChatUnreadChanged;
+    }
+
+    private void ToggleUserMenu()
+    {
+        isUserMenuOpen = !isUserMenuOpen;
+        if (isUserMenuOpen) isNotificationMenuOpen = false; // Close others
+    }
+
+    private async Task CloseUserMenuDelayed()
+    {
+        await Task.Delay(200); // Allow click event to register
+        isUserMenuOpen = false;
+    }
+    
+    private void ToggleNotificationMenu()
+    {
+        isNotificationMenuOpen = !isNotificationMenuOpen;
+        if (isNotificationMenuOpen) isUserMenuOpen = false; // Close others
+    }
+
+    private async Task CloseNotificationDelayed()
+    {
+        await Task.Delay(200);
+        isNotificationMenuOpen = false;
+    }
+
+    private async Task HandleMobileMenuToggle()
+    {
+        if (OnMobileMenuToggle.HasDelegate)
+        {
+            await OnMobileMenuToggle.InvokeAsync();
+            return;
+        }
+
+        await JS.InvokeVoidAsync("toggleMobileSidebar");
+    }
+
+    private async Task HandleLogout()
+    {
+        // Invoke parent's clean up logic first
+        if (OnLogout.HasDelegate)
+        {
+            await OnLogout.InvokeAsync();
+        }
+        
+        // Then navigate away
+        NavigationManager.NavigateTo("/login", true);
+    }    private string GetShortName(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "Admin";
+        if (name == "Admin") return "Admin";
+        
+        var part = name;
+        if (part.Contains("@"))
+        {
+            part = part.Split('@')[0];
+        }
+        
+        if (part.Length > 0)
+        {
+            return char.ToUpper(part[0]) + part[1..];
+        }
+        
+        return part;
+    }
+    private void HandleChatUnreadChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AppState.OnChatUnreadChanged -= HandleChatUnreadChanged;
+    }
+}

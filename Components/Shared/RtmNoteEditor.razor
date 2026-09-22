@@ -1,0 +1,2278 @@
+@using Microsoft.JSInterop
+@using MuseumAdmin.Models
+@using MuseumAdmin.Services
+@using System.Net.Http.Json
+@inject IHttpClientFactory HttpClientFactory
+@inject IClinicalNoteService ClinicalNoteService
+@inject ITimeTrackingService TimeTrackingService
+@inject AppState AppState
+@inject IJSRuntime JS
+@inject NotificationService NotificationService
+@implements IDisposable
+
+@{
+    var noteRequirements = GetNoteRequirements().ToList();
+}
+
+@if (isLoadingNote)
+{
+    <div class="cn-review-backdrop">
+        <div class="spinner"></div>
+    </div>
+}
+else
+{
+    <div class="cn-viewport @(clinicalNote.IsSigned ? "is-read-only" : "")">
+        <header class="cn-tb">
+            <div class="cn-brand">
+                <div class="cn-brand-mark">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="cn-brand-title">Therapy Track - RTM</div>
+                    <div class="cn-brand-subtitle">Monthly remote therapeutic monitoring</div>
+                </div>
+            </div>
+
+            <div class="cn-tb-meta">
+                <div class="cn-tb-badge cn-tbb-dark-teal"><span class="dot dg"></span>HIPAA Compliant</div>
+                <button type="button" class="cn-tb-badge cn-tbb-debug" @onclick="OpenDebugPanel">Debug Panel</button>
+                <div class="cn-tb-badge cn-tbb-dark-teal">
+                    <svg class="inline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    AES-256
+                </div>
+                <div class="cn-tb-badge cn-tbb-dark-blue">
+                    <svg class="inline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    MFA Active
+                </div>
+            </div>
+
+            <div class="cn-tb-user-wrap">
+                <div class="cn-tb-sep"></div>
+                <div class="cn-tb-user">
+                    <div class="cn-user-av">@(string.IsNullOrWhiteSpace(OperatorName) ? "OP" : string.Concat(OperatorName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0]))))</div>
+                    <div>
+                        <div class="cn-user-name">@OperatorName</div>
+                        <div class="cn-user-meta">@SelectedProviderProfile.Acronym · No modifier</div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="cn-btn-close" @onclick="HandleClose" aria-label="Close TherapyTrack RTM screen">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </header>
+
+        <div class="cn-lay">
+            <div class="cn-ma" id="main">
+                <section class="cn-hero">
+                    <div class="cn-hero-main">
+                        <div class="cn-pt-av">@GetChildInitial()</div>
+                        <div class="cn-hero-copy">
+                            <div class="cn-hero-title-row">
+                                <h2 class="cn-hero-title">@ChildDisplayName</h2>
+                                <span class="cn-state-pill @GetClinicalStatusClass()">@GetClinicalStatusText()</span>
+                            </div>
+                            <p class="cn-hero-subtitle">Monthly RTM note builder for SOAP documentation, billing readiness, and compliance review.</p>
+                            <div class="cn-chip-row">
+                                <span class="cn-chip">ID: MUSE-@(Id.ToString("D4"))</span>
+                                <span class="cn-chip">ICD-10 F32.9</span>
+                                <span class="cn-chip">Created @DisplayedCreatedAt.ToString("MMM d, yyyy")</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="cn-hero-actions">
+                        <div class="cn-hero-stat @(DisplayedAppDaysCount >= 16 ? "is-eligible" : "is-warning")">
+                            <span class="cn-hero-stat-label">Valid monitoring days</span>
+                            <span class="cn-hero-stat-value">@DisplayedAppDaysCount / 16+</span>
+                            <span class="cn-hero-stat-hint">@(DisplayedAppDaysCount >= 16 ? "RTM Pathway Eligible" : $"{16 - DisplayedAppDaysCount}d until RTM eligible")</span>
+                        </div>
+
+                        <div class="cn-hero-stat cn-hero-stat-revenue">
+                            <span class="cn-hero-stat-label">Est. reimbursement</span>
+                            <span class="cn-hero-stat-value">$@GetEstimatedRevenue().ToString("F2")</span>
+                            <span class="cn-hero-stat-hint">Code: @(string.IsNullOrEmpty(GetActiveCptCode()) ? "Pending" : GetActiveCptCode())</span>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="cn-summary-grid">
+                    <section class="rtm-premium-timecard">
+                        <div class="rtm-pt-header">
+                            <div class="rtm-pt-title-group">
+                                <div class="rtm-pt-icon">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polyline points="12 6 12 12 16 14"></polyline>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <div class="rtm-pt-title">Clinical Time Log</div>
+                                    <div class="rtm-pt-subtitle">@DisplayedCreatedAt.ToString("MMMM yyyy") · RTM Cycle</div>
+                                </div>
+                            </div>
+                            <div class="rtm-pt-stats">
+                                <div class="rtm-pt-time">
+                                    <span class="rtm-pt-value">@clinicalNote.ClinicalMinutes</span>
+                                    <span class="rtm-pt-unit">min</span>
+                                </div>
+                                <div class="rtm-pt-cpt @GetRtmTierClass()">
+                                    @GetRtmTierLabel()
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="rtm-pt-visualizer">
+                            <div class="rtm-pt-track">
+                                <div class="rtm-pt-seg">
+                                    <div class="rtm-pt-fill fill-slate" style="--rtm-fill-width:@(Math.Min(100, clinicalNote.ClinicalMinutes * 10))%;"></div>
+                                </div>
+                                <div class="rtm-pt-seg">
+                                    <div class="rtm-pt-fill fill-blue" style="--rtm-fill-width:@(clinicalNote.ClinicalMinutes < 10 ? 0 : Math.Min(100, (clinicalNote.ClinicalMinutes - 10) * 10))%;"></div>
+                                </div>
+                                <div class="rtm-pt-seg">
+                                    <div class="rtm-pt-fill fill-teal" style="--rtm-fill-width:@(clinicalNote.ClinicalMinutes < 20 ? 0 : Math.Min(100, (clinicalNote.ClinicalMinutes - 20) * 5))%;"></div>
+                                </div>
+                                <div class="rtm-pt-seg">
+                                    <div class="rtm-pt-fill fill-purple" style="--rtm-fill-width:@(clinicalNote.ClinicalMinutes < 40 ? 0 : 100)%;"></div>
+                                </div>
+                            </div>
+                            <div class="rtm-pt-labels">
+                                <span>0</span>
+                                <span class="label-mid">10m @if (DisplayedAppDaysCount >= 16) { <span class="label-code">98979</span> }</span>
+                                <span class="label-mid">20m @if (DisplayedAppDaysCount >= 16) { <span class="label-code">98980</span> }</span>
+                                <span class="label-end">40m @if (DisplayedAppDaysCount >= 16) { <span class="label-code">+98981</span> }</span>
+                            </div>
+                        </div>
+                        <div class="rtm-pt-actions">
+                            <span class="rtm-pt-hint">@(GetActiveCptCode() == "98975" || GetActiveCptCode() == "98978" || clinicalNote.IsInitialInteraction || clinicalNote.IsDeviceSupply ? "Setup & device supply are non-timed activities." : "Capture all direct patient monitoring time.")</span>
+                            <div class="rtm-pt-btn-group @(GetActiveCptCode() == "98975" || GetActiveCptCode() == "98978" || clinicalNote.IsInitialInteraction || clinicalNote.IsDeviceSupply ? "is-disabled" : "")">
+                                <button class="rtm-pt-btn" @onclick="() => RemoveMinutes(5)" disabled="@(clinicalNote.IsSigned || clinicalNote.ClinicalMinutes <= 0 || GetActiveCptCode() == "98975" || GetActiveCptCode() == "98978" || clinicalNote.IsInitialInteraction || clinicalNote.IsDeviceSupply)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                    5 min
+                                </button>
+                                <button class="rtm-pt-btn primary" @onclick="() => AddMinutes(5)" disabled="@(clinicalNote.IsSigned || clinicalNote.ClinicalMinutes >= 60 || GetActiveCptCode() == "98975" || GetActiveCptCode() == "98978" || clinicalNote.IsInitialInteraction || clinicalNote.IsDeviceSupply)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                    5 min
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="cn-section-heading">
+                    <div>
+                        <div class="cn-card-kicker">SOAP note</div>
+                        <h3 class="cn-section-title">Clinical narrative</h3>
+                    </div>
+                </div>
+
+                <div class="cn-ss @(showValidationErrors && !clinicalNote.SubjectiveDone ? "is-invalid" : "")" id="section-subjective">
+                    <div class="cn-sh">
+                        <div class="cn-sh-main">
+                            <div class="cn-sl cn-sl-subjective">S</div>
+                            <div>
+                                <div class="cn-sh-title">Subjective</div>
+                                <div class="cn-sh-subtitle">Patient-reported outcomes and observed engagement trends</div>
+                            </div>
+                        </div>
+                        <span class="cn-section-state @(clinicalNote.SubjectiveDone ? "is-complete" : "is-pending")">
+                            @(clinicalNote.SubjectiveDone ? "Completed ✓" : "Capture summary")
+                        </span>
+                    </div>
+                    <div class="cn-sb2 @(clinicalNote.SubjectiveDone ? "is-locked" : "")">
+                        <div class="cn-textarea-shell">
+                            <textarea class="cn-textarea has-mic" rows="4" placeholder="Describe participant engagement, symptoms, caregiver feedback, or patient-reported changes..." @bind="clinicalNote.Subjective" @bind:event="oninput" disabled="@(clinicalNote.SubjectiveDone || clinicalNote.IsSigned)"></textarea>
+                            <button type="button"
+                                    class="cn-mic-btn cn-mic-btn-overlay @(speechActiveField == SpeechField.Subjective ? "is-recording" : "")"
+                                    @onclick="() => ToggleSpeechInputAsync(SpeechField.Subjective)"
+                                    disabled="@(!speechRecognitionSupported || clinicalNote.IsSigned)"
+                                    title="@GetSpeechHint(SpeechField.Subjective)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                                    <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
+                                    <line x1="12" y1="18" x2="12" y2="22"></line>
+                                    <line x1="8" y1="22" x2="16" y2="22"></line>
+                                </svg>
+                                <span>@GetSpeechButtonLabel(SpeechField.Subjective)</span>
+                            </button>
+                        </div>
+                        <div class="cn-mic-status">@GetSpeechHint(SpeechField.Subjective)</div>
+
+                        <div class="cn-inline-badges cn-inline-badges-row justify-between">
+                            <div class="cn-inline-badge-list">
+                                <span class="badge bi">App days: @DisplayedAppDaysCount</span>
+                                <span class="badge @(DisplayedAppDaysCount >= 16 ? "bs" : "bw")">Adherence: @(DisplayedAppDaysCount >= 16 ? "High" : "Moderate")</span>
+                            </div>
+
+                            @if (!clinicalNote.IsSigned)
+                            {
+                                <div class="cn-section-actions compact">
+                                    @if (clinicalNote.SubjectiveDone)
+                                    {
+                                        <button class="rtm-pt-btn compact" @onclick='() => ToggleSectionDone("Subjective")'>
+                                            <svg class="inline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                            Edit
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="rtm-pt-btn primary compact" @onclick='() => ToggleSectionDone("Subjective")' disabled="@string.IsNullOrWhiteSpace(clinicalNote.Subjective)">
+                                            Confirm &amp; Next
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cn-ss @(showValidationErrors && !clinicalNote.ObjectiveDone ? "is-invalid" : "")" id="section-objective">
+                    <div class="cn-sh">
+                        <div class="cn-sh-main">
+                            <div class="cn-sl cn-sl-objective">O</div>
+                            <div>
+                                <div class="cn-sh-title">Objective</div>
+                                <div class="cn-sh-subtitle">Auto-populated remote monitoring and communication status</div>
+                            </div>
+                        </div>
+                        <span class="cn-section-state @(clinicalNote.ObjectiveDone ? "is-complete" : "is-pending")">
+                            @(clinicalNote.ObjectiveDone ? "Completed ✓" : "Review required")
+                        </span>
+                    </div>
+                    <div class="cn-sb2">
+                        <div class="cn-data-panel tight">
+                            <div class="cn-fr">
+                                <span class="cn-data-label">Days monitored this month</span>
+                                <span class="cn-data-value @(DisplayedAppDaysCount >= 16 ? "success" : "")">@DisplayedAppDaysCount days @(DisplayedAppDaysCount >= 16 ? "✓" : "")</span>
+                            </div>
+                            <div class="cn-fr">
+                                <span class="cn-data-label">Clinician time logged</span>
+                                <span class="cn-data-value warning">@clinicalNote.ClinicalMinutes min</span>
+                            </div>
+                            <div class="cn-fr">
+                                <span class="cn-data-label">Device / monitoring code</span>
+                                <span class="cn-data-value">98978</span>
+                            </div>
+                            <div class="cn-fr">
+                                <span class="cn-data-label">Billing modifier</span>
+                                <span class="cn-data-value">@SelectedProviderProfile.BillingModifier</span>
+                            </div>
+                        </div>
+                        <label class="cn-checkbox-row interactive @(clinicalNote.IsSigned ? "is-disabled" : "is-clickable")">
+                            <input type="checkbox" class="cn-checkbox-input"
+                                   checked="@clinicalNote.InteractiveCommunicationCompleted"
+                                   @onchange='(e) => ToggleSectionDone("Objective", (bool)e.Value!)'
+                                   disabled="@(clinicalNote.IsSigned)" />
+                            <span class="cn-checkbox-label">Real-time interactive communication completed this month</span>
+                            <span class="cn-checkbox-status @(clinicalNote.InteractiveCommunicationCompleted ? "success" : "muted")">
+                                @(clinicalNote.InteractiveCommunicationCompleted ? "Done ✓" : "Pending")
+                            </span>
+                        </label>
+                        @if (clinicalNote.InteractiveCommunicationCompleted)
+                        {
+                            <div class="cn-form-group" style="margin-top: 12px; padding: 12px 14px; background: var(--rtm-surface-alt); border-radius: 8px; border: 1px solid var(--rtm-border);">
+                                <label class="cn-data-label" style="display: block; margin-bottom: 6px; font-weight: 600; color: var(--rtm-text-2);">Communication Type</label>
+                                <select class="cn-prov-sel" style="margin: 0; padding: 6px 10px;" @bind="clinicalNote.CommunicationType" disabled="@(clinicalNote.IsSigned)">
+                                    <option value="">Select type...</option>
+                                    <option value="Messaging in app">Messaging in app</option>
+                                    <option value="Email">Email</option>
+                                    <option value="phone call">Phone call</option>
+                                    <option value="Other (noted in clinical notes)">Other (noted in clinical notes)</option>
+                                </select>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="cn-ss @(showValidationErrors && !clinicalNote.AssessmentDone ? "is-invalid" : "")" id="section-assessment">
+                    <div class="cn-sh">
+                        <div class="cn-sh-main">
+                            <div class="cn-sl cn-sl-assessment">A</div>
+                            <div>
+                                <div class="cn-sh-title">Assessment</div>
+                                <div class="cn-sh-subtitle">Clinical interpretation of progress, setbacks, and medical necessity</div>
+                            </div>
+                        </div>
+                        <span class="cn-section-state @(clinicalNote.AssessmentDone ? "is-complete" : "is-pending")">
+                            @(clinicalNote.AssessmentDone ? "Completed ✓" : "Required for billing")
+                        </span>
+                    </div>
+                    <div class="cn-sb2 @(clinicalNote.AssessmentDone ? "is-locked" : "")">
+                        <div class="cn-textarea-shell">
+                            <textarea class="cn-textarea has-mic" rows="4" placeholder="Interpret the monitoring data, clinical response, barriers, and why continued RTM remains appropriate..." @bind="clinicalNote.Assessment" @bind:event="oninput" disabled="@(clinicalNote.AssessmentDone || clinicalNote.IsSigned)"></textarea>
+                            <button type="button"
+                                    class="cn-mic-btn cn-mic-btn-overlay @(speechActiveField == SpeechField.Assessment ? "is-recording" : "")"
+                                    @onclick="() => ToggleSpeechInputAsync(SpeechField.Assessment)"
+                                    disabled="@(!speechRecognitionSupported || clinicalNote.IsSigned)"
+                                    title="@GetSpeechHint(SpeechField.Assessment)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                                    <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
+                                    <line x1="12" y1="18" x2="12" y2="22"></line>
+                                    <line x1="8" y1="22" x2="16" y2="22"></line>
+                                </svg>
+                                <span>@GetSpeechButtonLabel(SpeechField.Assessment)</span>
+                            </button>
+                        </div>
+                        <div class="cn-mic-status">@GetSpeechHint(SpeechField.Assessment)</div>
+
+                        <div class="cn-inline-badges cn-inline-badges-row justify-between">
+                            <div class="cn-inline-badge-list">
+                                <span class="badge bi">App days: @DisplayedAppDaysCount</span>
+                                <span class="badge @(DisplayedAppDaysCount >= 16 ? "bs" : "bw")">Adherence: @(DisplayedAppDaysCount >= 16 ? "High" : "Moderate")</span>
+                            </div>
+
+                            @if (!clinicalNote.IsSigned)
+                            {
+                                <div class="cn-section-actions compact">
+                                    @if (clinicalNote.AssessmentDone)
+                                    {
+                                        <button class="rtm-pt-btn compact" @onclick='() => ToggleSectionDone("Assessment")'>
+                                            <svg class="inline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                            Edit
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="rtm-pt-btn primary compact" @onclick='() => ToggleSectionDone("Assessment")' disabled="@string.IsNullOrWhiteSpace(clinicalNote.Assessment)">
+                                            Confirm &amp; Next
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cn-ss no-bottom-gap @(showValidationErrors && !clinicalNote.PlanDone ? "is-invalid" : "")" id="section-plan">
+                    <div class="cn-sh">
+                        <div class="cn-sh-main">
+                            <div class="cn-sl cn-sl-plan">P</div>
+                            <div>
+                                <div class="cn-sh-title">Plan</div>
+                                <div class="cn-sh-subtitle">Next interventions, communication cadence, and treatment adjustments</div>
+                            </div>
+                        </div>
+                        <span class="cn-section-state @(clinicalNote.PlanDone ? "is-complete" : "is-pending")">
+                            @(clinicalNote.PlanDone ? "Completed ✓" : "Required for billing")
+                        </span>
+                    </div>
+                    <div class="cn-sb2 @(clinicalNote.PlanDone ? "is-locked" : "")">
+                        <div class="cn-textarea-shell">
+                            <textarea class="cn-textarea has-mic" rows="4" placeholder="Document next actions, outreach, treatment modifications, and planned follow-up..." @bind="clinicalNote.Plan" @bind:event="oninput" disabled="@(clinicalNote.PlanDone || clinicalNote.IsSigned)"></textarea>
+                            <button type="button"
+                                    class="cn-mic-btn cn-mic-btn-overlay @(speechActiveField == SpeechField.Plan ? "is-recording" : "")"
+                                    @onclick="() => ToggleSpeechInputAsync(SpeechField.Plan)"
+                                    disabled="@(!speechRecognitionSupported || clinicalNote.PlanDone || clinicalNote.IsSigned)"
+                                    title="@GetSpeechHint(SpeechField.Plan)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                    <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                                    <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
+                                    <line x1="12" y1="18" x2="12" y2="22"></line>
+                                    <line x1="8" y1="22" x2="16" y2="22"></line>
+                                </svg>
+                                <span>@GetSpeechButtonLabel(SpeechField.Plan)</span>
+                            </button>
+                        </div>
+                        <div class="cn-mic-status">@GetSpeechHint(SpeechField.Plan)</div>
+
+                        <div class="cn-inline-badges cn-inline-badges-row justify-between">
+                            <div class="cn-inline-badge-list">
+                                <span class="badge bi">App days: @DisplayedAppDaysCount</span>
+                                <span class="badge @(DisplayedAppDaysCount >= 16 ? "bs" : "bw")">Adherence: @(DisplayedAppDaysCount >= 16 ? "High" : "Moderate")</span>
+                            </div>
+
+                            @if (!clinicalNote.IsSigned)
+                            {
+                                <div class="cn-section-actions compact">
+                                    @if (clinicalNote.PlanDone)
+                                    {
+                                        <button class="rtm-pt-btn compact" @onclick='() => ToggleSectionDone("Plan")'>
+                                            <svg class="inline-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                            Edit
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="rtm-pt-btn primary compact" @onclick='() => ToggleSectionDone("Plan")' disabled="@string.IsNullOrWhiteSpace(clinicalNote.Plan)">
+                                            Confirm &amp; Next
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <div class="cn-plan-footer">
+                            <div>
+                                @if (clinicalNote.IsSigned)
+                                {
+                                    <div class="cn-plan-footer-title">Finalized Note (v@noteHistory.FirstOrDefault()?.VersionNumber)</div>
+                                    <div class="cn-plan-footer-copy">This note is locked for legal non-repudiation. Amendments can be added below.</div>
+                                }
+                                else
+                                {
+                                    var unmetItems = GetNoteRequirements().Where(r => r.Critical && !r.Met).ToList();
+                                    var isReady = !unmetItems.Any();
+
+                                    @if (showValidationErrors && !isReady)
+                                    {
+                                        <div class="err-msg">
+                                            <svg class="err-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="3">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                            </svg>
+                                            <span>Missing: @(string.Join(", ", unmetItems.Select(r => r.Label.Replace("Ready", "").Replace("Finalized", "").Replace("Documented", "").Trim())))</span>
+                                        </div>
+                                    }
+
+                                    <div class="cn-plan-footer-title">@(isReady ? "Ready to Sign" : "Draft Incomplete")</div>
+                                    <div class="cn-plan-footer-copy">@(isReady ? "All narrative sections finalized. Signing locks this version for the record." : "Review the pending requirements above before signing.")</div>
+                                }
+                            </div>
+                            @if (clinicalNote.IsSigned)
+                            {
+                                <div class="cn-amendment-stack">
+                                    <input type="text" placeholder="Reason for amendment..." class="cn-textarea cn-amendment-input" @bind="amendmentReason" />
+                                    <button class="btnp" @onclick="SaveAmendment">Add Amendment</button>
+                                </div>
+                            }
+                            else
+                            {
+                                var isReadySign = !GetNoteRequirements().Any(r => r.Critical && !r.Met);
+                                <button class="btnp @(isReadySign ? "primary" : "secondary-ready")" @onclick="OpenReview">
+                                    @(isReadySign ? "Sign & Lock" : "Review & Sign")
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cn-rp">
+                <div class="cn-side-stack">
+                    <section class="cn-side-card flush">
+                        <div class="cn-side-card-header">
+                            <div class="cn-card-kicker">Codes this month</div>
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <h3 class="cn-side-title">CPT snapshot</h3>
+                                @if (_daysSinceSetup.HasValue)
+                                {
+                                    <span class="cn-badge @(_daysSinceSetup >= 16 ? "success" : "info")" style="font-size: 0.7rem;">
+                                        @_daysSinceSetup days active
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                        <div class="cn-side-card-body">
+                            <div class="cn-session-type-toggle">
+                                <button class="cn-type-btn @(!clinicalNote.IsInitialInteraction && !clinicalNote.IsDeviceSupply ? "active" : "")" 
+                                        @onclick="() => SetSessionType(SessionType.FollowUp)" 
+                                        disabled="@(clinicalNote.IsSigned || (_eligibleCodes.Any() && !_eligibleCodes.Any(c => c.Code == "98979" || c.Code.StartsWith("9898") || c.Code == "97110")) || (_disabledCodes.Contains("98979") && _disabledCodes.Contains("98980") && _disabledCodes.Contains("98981")))">Follow-up</button>
+                                <button class="cn-type-btn @(clinicalNote.IsInitialInteraction ? "active" : "")" 
+                                        @onclick="() => SetSessionType(SessionType.InitialEval)" 
+                                        disabled="@(clinicalNote.IsSigned || (_eligibleCodes.Any() && !_eligibleCodes.Any(c => c.Code == "98975")) || _disabledCodes.Contains("98975"))">Setup</button>
+                                <button class="cn-type-btn @(clinicalNote.IsDeviceSupply ? "active" : "")" 
+                                        @onclick="() => SetSessionType(SessionType.DeviceSupply)" 
+                                        disabled="@(clinicalNote.IsSigned || (_eligibleCodes.Any() && !_eligibleCodes.Any(c => c.Code == "98978")) || _disabledCodes.Contains("98978"))">Device</button>
+                            </div>
+
+                            @if (DisplayedAppDaysCount < 16)
+                            {
+                                <div class="cn-side-info-alert warning">
+                                    <div class="cn-side-info-head">
+                                        <div class="cn-side-info-icon">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                            </svg>
+                                        </div>
+                                        <strong>RTM Ineligible (&lt; 16d)</strong>
+                                    </div>
+                                    <p>All RTM codes are restricted. Please use evaluation or treatment codes below.</p>
+                                </div>
+                            }
+
+                            @foreach (var suggestion in GetSuggestedCptCodes())
+                            {
+                                <div class="cn-cc compact is-suggested @(clinicalNote.SelectedCptCode == suggestion.Code ? "is-selected" : "")" @onclick="() => SelectCptCode(suggestion.Code)">
+                                    @if (suggestion.Recommended)
+                                    {
+                                        <div class="cn-cc-recommended">Suggested</div>
+                                    }
+                                    <div class="cn-code-row">
+                                        <div>
+                                            <div class="cn-code-id large">@suggestion.Code</div>
+                                            <div class="cn-code-copy">@suggestion.Description</div>
+                                        </div>
+                                        <div class="cn-code-meta">
+                                            <div class="cn-code-id cn-code-meta-value">$@GetEstimatedRevenue().ToString("F2")</div>
+                                            <span class="badge @(clinicalNote.SelectedCptCode == suggestion.Code ? "bs" : "bw")">
+                                                @(clinicalNote.SelectedCptCode == suggestion.Code ? "Selected" : "Available")
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            <button class="cn-text-link" @onclick="() => showCptGuide = true">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px; vertical-align:middle;">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                </svg>
+                                CPT Billing Guide
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="cn-side-card cn-side-card-emphasis">
+                        <div class="cn-card-kicker">Provider type</div>
+                        <select class="cn-prov-sel" @bind="selectedProviderAcronym">
+                            @foreach (var group in ProviderGroups)
+                            {
+                                <optgroup label="@group.Category">
+                                    @foreach (var provider in group.Providers)
+                                    {
+                                        <option value="@provider.Acronym">@provider.DropdownLabel</option>
+                                    }
+                                </optgroup>
+                            }
+                        </select>
+
+                        <div class="cn-prov-card">
+                            <div class="cn-prov-hero">
+                                <div class="cn-prov-av">@SelectedProviderProfile.Initials</div>
+                                <div class="cn-prov-titles">
+                                    <h4>@SelectedProviderProfile.Title</h4>
+                                    <span>@SelectedProviderProfile.Subtitle</span>
+                                </div>
+                            </div>
+                            <div class="cn-prov-details">
+                                <div class="cn-prov-pair"><span>Credential</span> <strong>@SelectedProviderProfile.Acronym</strong></div>
+                                <div class="cn-prov-pair"><span>RTM track</span> <strong>@SelectedProviderProfile.Track</strong></div>
+                                <div class="cn-prov-pair"><span>Medicare status</span> <strong>@SelectedProviderProfile.MedicareStatus</strong></div>
+                                <div class="cn-prov-pair"><span>Billing modifier</span> <span class="badge bs">@SelectedProviderProfile.BillingModifier</span></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="cn-side-card">
+                        <div class="cn-card-kicker">Requirements</div>
+                        <h3 class="cn-side-title">Compliance checklist</h3>
+                        <div class="cn-requirement-list">
+                            @foreach (var req in noteRequirements)
+                            {
+                                <div class="cn-requirement-row @(req.Met ? "is-met" : "is-missing")">
+                                    <span class="dot @(req.Met ? "dg" : "da")"></span>
+                                    <span>@req.Label</span>
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    @if (noteHistory.Any())
+                    {
+                        <section class="cn-side-card">
+                            <div class="cn-card-kicker">Version history</div>
+                            <h3 class="cn-side-title">Audit trail</h3>
+                            <div class="cn-audit-list spaced">
+                                @foreach (var v in noteHistory)
+                                {
+                                    <div class="cn-audit-item spacious @(v.IsFinal ? "final" : "plain")">
+                                        <div class="cn-audit-head">
+                                            <strong>Version @v.VersionNumber @(v.IsFinal ? " (Final)" : "")</strong>
+                                            <span>@v.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</span>
+                                        </div>
+                                        <div class="cn-audit-author">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                                <circle cx="12" cy="7" r="4"></circle>
+                                            </svg>
+                                            @v.AuthorId
+                                        </div>
+                                        @if (!string.IsNullOrEmpty(v.AmendmentReason))
+                                        {
+                                            <div class="cn-audit-reason">"@v.AmendmentReason"</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="cn-audit-footer compact">Immutable records enabled</div>
+                        </section>
+                    }
+
+                    <section class="cn-side-card">
+                        <div class="cn-card-kicker">Session tracking</div>
+                        <h3 class="cn-side-title">Live audit trail</h3>
+                        <div class="cn-audit-list dashed-top">
+                            @foreach (var entry in clinicalNote.AuditEntries.AsEnumerable().Reverse().Take(8))
+                            {
+                                <div class="cn-audit-row">
+                                    <div class="cn-audit-action cn-audit-mono">@entry.Action</div>
+                                    <div class="cn-audit-time cn-audit-mono">@entry.Time.ToString("h:mm tt") @(TimeZoneInfo.Local.IsDaylightSavingTime(entry.Time) ? TimeZoneInfo.Local.DaylightName : TimeZoneInfo.Local.StandardName)</div>
+                                </div>
+                            }
+                        </div>
+                        <div class="cn-audit-footer compact">
+                            <span>Server Side</span>
+                            <span>•</span>
+                            <span>Non-Repudiable</span>
+                            <span>•</span>
+                            <span>6YR Retention</span>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+        @if (showDebugPanel)
+        {
+            <div class="cn-debug-backdrop" @onclick="CloseDebugPanel">
+                <div class="cn-debug-modal" @onclick:stopPropagation="true">
+                    <div class="cn-debug-header">
+                        <div>
+                            <h2 class="cn-debug-modal-title">Debug Panel</h2>
+                            <p class="cn-debug-modal-subtitle">Adjust the created date and RTM revenue values to preview the cycle after 16 days.</p>
+                        </div>
+                        <button type="button" class="cn-debug-close" @onclick="CloseDebugPanel" aria-label="Close debug panel">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="cn-debug-body">
+                        <div class="cn-debug-grid">
+                            <div class="cn-debug-card">
+                                <label class="cn-debug-label" for="debug-created-date">Created Date</label>
+                                <input id="debug-created-date" type="date" class="cn-debug-input" value="@GetDebugCreatedDateInput()" @onchange="HandleDebugCreatedDateChanged" />
+                                <div class="cn-debug-action-row">
+                                    <button type="button" class="cn-debug-action" @onclick="SetDebugDateToday">Today</button>
+                                    <button type="button" class="cn-debug-action" @onclick="SetDebugDateSixteenDaysAgo">16 days ago</button>
+                                    <button type="button" class="cn-debug-action secondary" @onclick="ResetDebugCreatedDate">Reset</button>
+                                </div>
+                            </div>
+
+                            <div class="cn-debug-card cn-debug-summary">
+                                <div class="cn-debug-summary-row">
+                                    <span>Preview Created</span>
+                                    <strong>@DisplayedCreatedAt.ToString("MMM d, yyyy")</strong>
+                                </div>
+                                <div class="cn-debug-summary-row">
+                                    <span>Preview App Days</span>
+                                    <strong>@DisplayedAppDaysCount</strong>
+                                </div>
+                                <div class="cn-debug-summary-row">
+                                    <span>RTM Eligibility</span>
+                                    <strong>@(DisplayedAppDaysCount >= 16 ? "Eligible" : $"{16 - DisplayedAppDaysCount} days remaining")</strong>
+                                </div>
+                                <div class="cn-debug-summary-row">
+                                    <span>Episode Cycle</span>
+                                    <strong class="@(clinicalNote.IsInitialInteraction ? "text-teal" : (clinicalNote.IsDeviceSupply ? "text-teal" : "text-blue"))">@(clinicalNote.IsInitialInteraction ? "First Time / Setup" : (clinicalNote.IsDeviceSupply ? "Device Supply" : "Follow-up Care"))</strong>
+                                </div>
+                                <div class="cn-debug-summary-row">
+                                    <span>Billing Pathway</span>
+                                    <strong>@(clinicalNote.IsInitialInteraction ? "Setup (98975)" : (clinicalNote.IsDeviceSupply ? "Device Supply (98978)" : (DisplayedAppDaysCount >= 16 ? "Monitoring (98979+)" : "Standard Visit")))</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="cn-debug-card">
+                            <label class="cn-debug-label">Episode Cycle Management</label>
+                            <div class="cn-debug-action-row">
+                                <button type="button" class="cn-debug-action @(clinicalNote.IsInitialInteraction ? "" : "secondary")" @onclick="() => SetSessionType(SessionType.InitialEval)">Setup (First Time)</button>
+                                <button type="button" class="cn-debug-action @(clinicalNote.IsDeviceSupply ? "" : "secondary")" @onclick="() => SetSessionType(SessionType.DeviceSupply)">Device Supply</button>
+                                <button type="button" class="cn-debug-action @(!clinicalNote.IsInitialInteraction && !clinicalNote.IsDeviceSupply ? "" : "secondary")" @onclick="() => SetSessionType(SessionType.FollowUp)" disabled="@(clinicalNote.IsInitialInteraction || clinicalNote.IsDeviceSupply)">Follow-up Care</button>
+                            </div>
+                            <div class="cn-debug-helper" style="margin-top: 8px;">Switching to Setup (98975) will disable time tracking for this session.</div>
+                        </div>
+
+                        <div class="cn-debug-card cn-debug-revenue-card">
+                            <div class="cn-debug-section-head">
+                                <div>
+                                    <label class="cn-debug-label">Revenue Overrides</label>
+                                    <div class="cn-debug-helper">Change these values to see billing move across initial, follow-up, and RTM visits.</div>
+                                </div>
+                                <div class="cn-debug-live-value">Current estimate: <strong>$@GetEstimatedRevenue().ToString("F2")</strong></div>
+                            </div>
+
+                            <div class="cn-debug-revenue-group">
+                                    <div class="cn-debug-revenue-group-title">RTM Initial Setup</div>
+                                    <div class="cn-debug-revenue-grid">
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-98975">98975 (Setup)</label><input id="debug-revenue-98975" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue98975" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-98978">98978 (Device)</label><input id="debug-revenue-98978" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue98978" @bind-value:event="oninput" /></div>
+                                    </div>
+                                </div>
+
+                                <div class="cn-debug-revenue-group">
+                                    <div class="cn-debug-revenue-group-title">Standard Evaluation</div>
+                                    <div class="cn-debug-revenue-grid">
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97161">97161</label><input id="debug-revenue-97161" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97161" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97162">97162</label><input id="debug-revenue-97162" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97162" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97163">97163</label><input id="debug-revenue-97163" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97163" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97165">97165</label><input id="debug-revenue-97165" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97165" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97166">97166</label><input id="debug-revenue-97166" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97166" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97167">97167</label><input id="debug-revenue-97167" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97167" @bind-value:event="oninput" /></div>
+                                        <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-90791">90791</label><input id="debug-revenue-90791" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue90791" @bind-value:event="oninput" /></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="cn-debug-revenue-group">
+                                <div class="cn-debug-revenue-group-title">Follow-up</div>
+                                <div class="cn-debug-revenue-grid">
+                                    <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97110">97110</label><input id="debug-revenue-97110" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97110" @bind-value:event="oninput" /></div>
+                                    <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-97530">97530</label><input id="debug-revenue-97530" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue97530" @bind-value:event="oninput" /></div>
+                                    <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-98966">98966</label><input id="debug-revenue-98966" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue98966" @bind-value:event="oninput" /></div>
+                                </div>
+                            </div>
+
+                            <div class="cn-debug-revenue-group">
+                                <div class="cn-debug-revenue-group-title">RTM</div>
+                                <div class="cn-debug-revenue-grid">
+                                    <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-98979">98979 at 10 min</label><input id="debug-revenue-98979" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue98979" @bind-value:event="oninput" /></div>
+                                    <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-98980">98980 at 20 min</label><input id="debug-revenue-98980" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue98980" @bind-value:event="oninput" /></div>
+                                    <div class="cn-debug-revenue-item"><label class="cn-debug-label" for="debug-revenue-98981">98981 at 40 min</label><input id="debug-revenue-98981" type="number" step="0.01" class="cn-debug-input" @bind-value="debugRevenue98981" @bind-value:event="oninput" /></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="cn-debug-footnote">This does not save the note. It only changes the preview while you are testing the UI.</div>
+                    </div>
+                </div>
+            @* </div> *@
+        }
+    </div>
+}
+
+@* ── DEV: therapy-time debug sticker — remove before prod ── *@
+@if (!isLoadingNote && !clinicalNote.IsSigned)
+{
+    var _rawSec = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(Id, 0);
+    var _elapsed = _rawSec - _noteOpenedAtSeconds;
+    var _liveMm = Math.Max(0, Math.Min(60, _baseMinutes + (int)Math.Ceiling(_elapsed / 60.0) + _manualMinutesAdjustment));
+    var _dispMm = _rawSec / 60;
+    var _dispSs = _rawSec % 60;
+    <div class="debug-sticker">
+        <div class="debug-sticker-icon @(_timeFrozen ? "frozen" : "live")">
+            @if (_timeFrozen)
+            {
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            }
+            else
+            {
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            }
+        </div>
+        <div class="debug-sticker-body">
+            <div class="debug-sticker-label">@(_timeFrozen ? "🔒 RTM Frozen · " : "📝 RTM Live · ")@ChildDisplayName</div>
+            <div class="debug-sticker-time">@_dispMm.ToString("D2"):@_dispSs.ToString("D2")</div>
+            <div class="debug-sticker-sub">Bill: @_liveMm min · @(_timeFrozen ? "Locked" : "Counting")</div>
+        </div>
+    </div>
+}
+
+@if (showReviewPopup)
+{
+    <div class="cn-review-backdrop" @onclick="CloseReview">
+        <div class="cn-review-dialog" @onclick:stopPropagation="true">
+            <div class="cn-review-header">
+                <div>
+                    <h2 class="cn-review-title">Review Clinical Note</h2>
+                    <p class="cn-review-subtitle">Verify documentation before final sign-off</p>
+                </div>
+                <button class="cn-review-close" @onclick="CloseReview">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="cn-review-body" id="cn-review-body" @onscroll="HandleReviewScroll">
+                <div class="cn-review-scroll-hint">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <polyline points="7 8 12 13 17 8"></polyline>
+                        <polyline points="7 13 12 18 17 13"></polyline>
+                    </svg>
+                    <span>@(reviewScrolledToBottom ? "Clinical summary reviewed. Final sign-off is now enabled." : "Please scroll to the bottom of the clinical summary to final sign & lock this note")</span>
+                </div>
+                <div class="cn-review-section">
+                    <h3 class="cn-review-sec-title">Narrative Summary (SOAP)</h3>
+                    <div class="cn-review-soap-card">
+                        <div class="cn-review-soap-item">
+                            <span class="cn-review-soap-label subjective">S</span>
+                            <div class="cn-review-soap-content">
+                                <strong>Subjective</strong>
+                                <p>@(!string.IsNullOrWhiteSpace(clinicalNote.Subjective) ? clinicalNote.Subjective : "No narrative recorded.")</p>
+                            </div>
+                        </div>
+                        <div class="cn-review-soap-item">
+                            <span class="cn-review-soap-label objective">O</span>
+                            <div class="cn-review-soap-content">
+                                <strong>Objective</strong>
+                                <div class="cn-review-stats-mini">
+                                    <span>App Days: @DisplayedAppDaysCount</span>
+                                    <span>Minutes: @clinicalNote.ClinicalMinutes</span>
+                                    <span>Interactive: @(clinicalNote.InteractiveCommunicationCompleted ? "Yes" : "No")</span>
+                                    @if (!string.IsNullOrWhiteSpace(clinicalNote.CommunicationType))
+                                    {
+                                        <span>Type: @clinicalNote.CommunicationType</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cn-review-soap-item">
+                            <span class="cn-review-soap-label assessment">A</span>
+                            <div class="cn-review-soap-content">
+                                <strong>Assessment</strong>
+                                <p>@(!string.IsNullOrWhiteSpace(clinicalNote.Assessment) ? clinicalNote.Assessment : "No assessment recorded.")</p>
+                            </div>
+                        </div>
+                        <div class="cn-review-soap-item">
+                            <span class="cn-review-soap-label plan">P</span>
+                            <div class="cn-review-soap-content">
+                                <strong>Plan</strong>
+                                <p>@(!string.IsNullOrWhiteSpace(clinicalNote.Plan) ? clinicalNote.Plan : "No plan recorded.")</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="cn-review-grid-row">
+                    <div class="cn-review-section">
+                        <h3 class="cn-review-sec-title">Compliance Review</h3>
+                        <div class="cn-review-checklist">
+                            @foreach (var req in GetNoteRequirements())
+                            {
+                                <div class="cn-review-check-item @(req.Met ? "is-met" : "is-missing")">
+                                    <div class="cn-review-check-icon">
+                                        @if (req.Met)
+                                        {
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                        }
+                                        else
+                                        {
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                        }
+                                    </div>
+                                    <span>@req.Label</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="cn-review-section">
+                        <h3 class="cn-review-sec-title">Billing & Reimbursement</h3>
+                        <div class="cn-review-billing-card">
+                            <div class="cn-review-bill-row">
+                                <span>Primary Code</span>
+                                <strong>@GetActiveCptCode()</strong>
+                            </div>
+                            <div class="cn-review-bill-row">
+                                <span>Total Minutes</span>
+                                <strong>@clinicalNote.ClinicalMinutes min</strong>
+                            </div>
+                            <div class="cn-review-bill-row total">
+                                <span>Est. Reimbursement</span>
+                                <strong>$@GetEstimatedRevenue().ToString("F2")</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="cn-review-footnote">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <span>Once submitted can't be edited due to HIPAA. Please review before proceeding further.</span>
+                </div>
+                <div class="cn-review-footer">
+                    <button class="cn-review-btn-secondary" @onclick="CloseReview">Back to Editor</button>
+                    @{
+                        var canSign = !GetNoteRequirements().Any(r => r.Critical && !r.Met);
+                    }
+                    <button class="cn-review-btn-primary @((!canSign || !reviewScrolledToBottom) ? "is-disabled" : "")" @onclick="AskForSecurePin" disabled="@(!canSign || !reviewScrolledToBottom)">
+                        <svg class="inline-icon-lg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                        </svg>
+                        Final Sign & Lock (legally binding)
+                    </button>
+                </div>
+
+                @if (!canSign)
+                {
+                    <p class="cn-review-error">Complete all critical items before signing.</p>
+                }
+                else if (!reviewScrolledToBottom)
+                {
+                    @* <p class="cn-review-error">Scroll through the review summary to enable final sign-off.</p> *@
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@if (showPinPopup)
+{
+    <div class="cn-review-backdrop" @onclick="ClosePinPopup">
+        <div class="cn-review-dialog" @onclick:stopPropagation="true" style="max-width: 400px; overflow: hidden;">
+            <div class="cn-review-header" style="border-bottom: none; padding-bottom: 0;">
+                <div>
+                    <h2 class="cn-review-title">Secure Signature</h2>
+                    <p class="cn-review-subtitle">Enter your 6-digit PIN to legally sign this note.</p>
+                </div>
+                <button class="cn-review-close" @onclick="ClosePinPopup">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="cn-review-body" style="padding: 24px; text-align: center; overflow: visible;">
+                <div style="margin-bottom: 24px;">
+                    <input type="password" 
+                           placeholder="••••••" 
+                           maxlength="6" 
+                           @bind="securePin" 
+                           @bind:event="oninput" 
+                           style="width: 100%; max-width: 240px; text-align: center; font-size: 32px; letter-spacing: 12px; padding: 12px; border: 2px solid #E2E8F0; border-radius: 12px; outline: none; transition: all 0.2s; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); color: #0F172A;" 
+                           onfocus="this.style.borderColor='#3B82F6'; this.style.boxShadow='0 0 0 3px rgba(59, 130, 246, 0.2)';" 
+                           onblur="this.style.borderColor='#E2E8F0'; this.style.boxShadow='inset 0 2px 4px rgba(0,0,0,0.02)';" />
+                </div>
+                <div style="background-color: #F8FAFC; border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+                    <p style="font-size: 13px; color: #64748B; margin: 0; line-height: 1.5; text-align: left;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align: middle; margin-right: 6px; margin-top: -2px; color: #3B82F6; display: inline-block;">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        By entering your PIN, you are legally signing this document. Once submitted, it cannot be edited due to HIPAA regulations.
+                    </p>
+                </div>
+            </div>
+            <div class="cn-review-footer" style="justify-content: space-between; border-top: 1px solid #E2E8F0; background-color: #F8FAFC;">
+                <button class="cn-review-btn-secondary" @onclick="ClosePinPopup">Cancel</button>
+                <button class="cn-review-btn-primary @(securePin?.Length < 6 ? "is-disabled" : "")" @onclick="ConfirmPinAndSign" disabled="@(securePin?.Length < 6)" style="padding-left: 20px; padding-right: 20px;">
+                    <svg class="inline-icon-lg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    Confirm & Sign
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showCptGuide)
+{
+    <div class="cpt-guide-overlay" @onclick="() => showCptGuide = false">
+        <div class="cpt-guide-modal" @onclick:stopPropagation="true">
+            <div class="cpt-guide-header">
+                <div>
+                    <h3 style="margin:0; font-size: 20px;">CPT Billing Reference Guide</h3>
+                    <p style="margin:4px 0 0; font-size: 13px; color: #64748B;">Guidelines for PT, OT, and Behavioral Health</p>
+                </div>
+                <button class="image-preview-close" @onclick="() => showCptGuide = false">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="cpt-guide-body">
+                <div class="cpt-table-container">
+                    <table class="cpt-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>CPT Code</th>
+                                <th>Description</th>
+                                <th>When to Use</th>
+                                <th>Key Requirement</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="cpt-cat-header"><td colspan="5">Evaluation (PT)</td></tr>
+                            <tr><td>PT Evaluation</td><td><span class="cpt-code-pill">97161</span></td><td>PT eval – low complexity</td><td>First visit</td><td>Initial assessment</td></tr>
+                            <tr><td>PT Evaluation</td><td><span class="cpt-code-pill">97162</span></td><td>PT eval – moderate</td><td>First visit</td><td>Moderate complexity</td></tr>
+                            <tr><td>PT Evaluation</td><td><span class="cpt-code-pill">97163</span></td><td>PT eval – high</td><td>First visit</td><td>Complex cases</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">Evaluation (OT)</td></tr>
+                            <tr><td>OT Evaluation</td><td><span class="cpt-code-pill">97165</span></td><td>OT eval – low</td><td>First visit</td><td>Initial assessment</td></tr>
+                            <tr><td>OT Evaluation</td><td><span class="cpt-code-pill">97166</span></td><td>OT eval – moderate</td><td>First visit</td><td>Moderate complexity</td></tr>
+                            <tr><td>OT Evaluation</td><td><span class="cpt-code-pill">97167</span></td><td>OT eval – high</td><td>First visit</td><td>Complex cases</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">Behavioral Health Eval</td></tr>
+                            <tr><td>Behavioral Eval</td><td><span class="cpt-code-pill">90791</span></td><td>Psychiatric diagnostic eval</td><td>First visit</td><td>No medical services</td></tr>
+                            <tr><td>Behavioral Eval</td><td><span class="cpt-code-pill">90792</span></td><td>Psychiatric eval + medical</td><td>First visit</td><td>With medical component</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">Therapy Sessions</td></tr>
+                            <tr><td>Psychotherapy</td><td><span class="cpt-code-pill">90832</span></td><td>Psychotherapy (30 min)</td><td>Follow-up sessions</td><td>16–37 mins</td></tr>
+                            <tr><td>Psychotherapy</td><td><span class="cpt-code-pill">90834</span></td><td>Psychotherapy (45 min)</td><td>Follow-up sessions</td><td>38–52 mins</td></tr>
+                            <tr><td>Psychotherapy</td><td><span class="cpt-code-pill">90837</span></td><td>Psychotherapy (60 min)</td><td>Follow-up sessions</td><td>53+ mins</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">Therapeutic Treatment</td></tr>
+                            <tr><td>Treatment</td><td><span class="cpt-code-pill">97110</span></td><td>Therapeutic exercises</td><td>Exercise guidance</td><td>Per 15 mins</td></tr>
+                            <tr><td>Treatment</td><td><span class="cpt-code-pill">97530</span></td><td>Therapeutic activities</td><td>Functional tasks</td><td>Per 15 mins</td></tr>
+                            <tr><td>Treatment</td><td><span class="cpt-code-pill">97112</span></td><td>Neuromuscular re-ed</td><td>Balance, coordination</td><td>Per 15 mins</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">Remote Communication</td></tr>
+                            <tr><td>Phone Consult</td><td><span class="cpt-code-pill">98966</span></td><td>Phone consult (5–10 min)</td><td>Non-face-to-face</td><td>Non-physician</td></tr>
+                            <tr><td>Phone Consult</td><td><span class="cpt-code-pill">98967</span></td><td>Phone consult (11–20 min)</td><td>Remote interaction</td><td>Non-physician</td></tr>
+                            <tr><td>Phone Consult</td><td><span class="cpt-code-pill">98968</span></td><td>Phone consult (21–30 min)</td><td>Remote interaction</td><td>Non-physician</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">Digital E/M</td></tr>
+                            <tr><td>Digital Consult</td><td><span class="cpt-code-pill">99421</span></td><td>Online consult (5–10 min)</td><td>Portal/chat</td><td>Physicians only</td></tr>
+                            <tr><td>Digital Consult</td><td><span class="cpt-code-pill">99422</span></td><td>Online consult (11–20 min)</td><td>Digital care</td><td>Physicians</td></tr>
+                            <tr><td>Digital Consult</td><td><span class="cpt-code-pill">99423</span></td><td>Online consult (21+ min)</td><td>Digital care</td><td>Physicians</td></tr>
+                            <tr class="cpt-cat-header"><td colspan="5">RTM Pathways</td></tr>
+                            <tr><td>RTM Setup</td><td><span class="cpt-code-pill">98975</span></td><td>Setup + education</td><td>First setup</td><td>Once per episode</td></tr>
+                            <tr><td>RTM Device</td><td><span class="cpt-code-pill">98977</span></td><td>Device supply (Resp)</td><td>Monthly</td><td>Device + data</td></tr>
+                            <tr><td>RTM Device</td><td><span class="cpt-code-pill">98978</span></td><td>Device supply (MSK)</td><td>Monthly</td><td>Device + data</td></tr>
+                            <tr><td>RTM Monitoring</td><td><span class="cpt-code-pill">98979</span></td><td>Monitoring</td><td>&gt; 16 days data</td><td>≥ 16 days data</td></tr>
+                            <tr><td>RTM Mgmt</td><td><span class="cpt-code-pill">98980</span></td><td>Mgmt (first 20 min)</td><td>Monthly</td><td>≥ 20 mins time</td></tr>
+                            <tr><td>RTM Mgmt</td><td><span class="cpt-code-pill">98981</span></td><td>Mgmt add-on</td><td>Extra 20 min</td><td>≥ 40 mins total</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="cpt-guide-header" style="justify-content: flex-end; padding: 16px 24px;">
+                <button class="btng" @onclick="() => showCptGuide = false">Close Guide</button>
+            </div>
+        </div>
+    </div>
+}
+
+
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [Parameter] public int? ExistingNoteId { get; set; }
+    [Parameter] public string ChildDisplayName { get; set; } = "Child";
+    [Parameter] public string OperatorName { get; set; } = "System";
+    [Parameter] public string OperatorId { get; set; } = "";
+    [Parameter] public int AppDaysCount { get; set; }
+    [Parameter] public int AdherenceRate { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSigned { get; set; }
+
+    private bool showCptGuide;
+    private bool showDebugPanel;
+    private bool showReviewPopup;
+    private bool showPinPopup;
+    private string securePin = "";
+    private bool showValidationErrors;
+    private DateTime? debugCreatedAtLocal;
+    private decimal debugRevenue97161 = 85.00m;
+    private decimal debugRevenue97162 = 85.00m;
+    private decimal debugRevenue97163 = 85.00m;
+    private decimal debugRevenue97165 = 82.00m;
+    private decimal debugRevenue97166 = 82.00m;
+    private decimal debugRevenue97167 = 82.00m;
+    private decimal debugRevenue90791 = 155.00m;
+    private decimal debugRevenue98975 = 19.33m;
+    private decimal debugRevenue98978 = 18.25m;
+    private decimal debugRevenue97110 = 31.00m;
+    private decimal debugRevenue97530 = 32.00m;
+    private decimal debugRevenue98966 = 32.00m;
+    private decimal debugRevenue98979 = 40.50m;
+    private decimal debugRevenue98980 = 48.50m;
+    private decimal debugRevenue98981 = 52.20m;
+    private ClinicalNoteModel clinicalNote = new();
+    private DotNetObjectReference<RtmNoteEditor>? speechInteropRef;
+    private SpeechField? speechActiveField;
+    private string? speechStatusMessage;
+    private bool speechRecognitionSupported = true;
+    private ClinicalNote? currentDbNote;
+    private List<ClinicalNoteVersion> noteHistory = new();
+    private string amendmentReason = "";
+    private string? currentSessionJustification;
+    private bool isLoadingNote = true;
+    private bool reviewScrolledToBottom;
+    private bool pendingReviewScrollCheck;
+    private bool isFirstTimePatient;
+    private string selectedProviderAcronym = "LCSW";
+
+    // ── Billing Eligibility State ──────────────────────────────────────────
+    private List<EligibleCodeDto> _eligibleCodes = new();
+    private List<string> _disabledCodes = new();
+    private int? _daysSinceSetup;
+
+    // ── Live therapy-time tracking ──────────────────────────────────────────
+    // Counts continuously from note-open until "Review & Sign" is clicked.
+    // _noteOpenedAtSeconds = AppState snapshot when the note editor was opened.
+    // _baseMinutes         = ClinicalMinutes already stored (existing notes).
+    // _manualMinutesAdjustment = cumulative delta from the +5/-5 buttons.
+    // _timeFrozen          = set to true when OpenReview() is called.
+    private int _noteOpenedAtSeconds;
+    private int _baseMinutes;
+    private int _manualMinutesAdjustment;
+    private bool _timeFrozen;
+    private System.Threading.Timer? _liveTimer;
+
+    private ProviderProfile SelectedProviderProfile => ProviderGroups
+        .SelectMany(g => g.Providers)
+        .FirstOrDefault(p => p.Acronym == selectedProviderAcronym) ?? ProviderGroups[0].Providers[0];
+
+    private DateTime DisplayedCreatedAt => debugCreatedAtLocal ?? clinicalNote.CreatedAt.ToLocalTime();
+
+    private int DisplayedAppDaysCount => debugCreatedAtLocal.HasValue
+        ? Math.Max(0, (DateTime.Today - debugCreatedAtLocal.Value.Date).Days)
+        : clinicalNote.AppDaysCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNoteStateAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (pendingReviewScrollCheck)
+        {
+            pendingReviewScrollCheck = false;
+            await UpdateReviewScrollStateAsync();
+        }
+
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            speechRecognitionSupported = await JS.InvokeAsync<bool>("childDetailSpeech.isSupported");
+        }
+        catch
+        {
+            speechRecognitionSupported = false;
+        }
+
+        if (!speechRecognitionSupported)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadNoteStateAsync()
+    {
+        isLoadingNote = true;
+        currentSessionJustification = null;
+
+        try
+        {
+            isFirstTimePatient = !await ClinicalNoteService.HasPriorSignedSetupNoteAsync(Id);
+
+            if (ExistingNoteId.HasValue)
+            {
+                // LOADING A SPECIFIC SIGNED NOTE FOR AMENDMENT
+                currentDbNote = (await ClinicalNoteService.GetSignedNotesForChildAsync(Id))
+                    .FirstOrDefault(n => n.Id == ExistingNoteId.Value);
+            }
+            else
+            {
+                // LOADING LATEST DRAFT (Prefer AppState per user req)
+                currentDbNote = await ClinicalNoteService.GetNoteAsync(Id, EffectiveOperatorId);
+            }
+
+            if (currentDbNote != null)
+            {
+                noteHistory = await ClinicalNoteService.GetNoteHistoryAsync(currentDbNote.Id);
+                var latest = noteHistory.FirstOrDefault();
+                if (latest != null)
+                {
+                    clinicalNote = new ClinicalNoteModel
+                    {
+                        Subjective = latest.Subjective,
+                        Assessment = latest.Assessment,
+                        Plan = latest.Plan,
+                        InteractiveCommunicationCompleted = latest.InteractiveCommunicationCompleted,
+                        CommunicationType = latest.CommunicationType,
+                        ClinicalMinutes = latest.ClinicalMinutes,
+                        AppDaysCount = latest.AppDaysCount,
+                        AdherenceRate = latest.AdherenceRate,
+                        ObjectiveDone = latest.ObjectiveDone,
+                        AssessmentDone = latest.AssessmentDone,
+                        PlanDone = latest.PlanDone,
+                        SubjectiveDone = latest.SubjectiveDone,
+                        IsInitialInteraction = latest.IsInitialInteraction,
+                        SelectedCptCode = latest.SelectedCptCode ?? "",
+                        IsSigned = currentDbNote.Status == ClinicalNoteStatus.Signed || currentDbNote.Status == ClinicalNoteStatus.Amended,
+                        CreatedAt = currentDbNote.CreatedAt,
+                        SignedAt = currentDbNote.SignedAt,
+                        SignedBy = currentDbNote.SignedBy
+                    };
+                    _baseMinutes = latest.ClinicalMinutes;
+                    _noteOpenedAtSeconds = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(Id, 0);
+                    _manualMinutesAdjustment = 0;
+                    _timeFrozen = clinicalNote.IsSigned;
+                }
+            }
+            // IF NO DB NOTE, CHECK APPSTATE DRAFT
+            else if (AppState.ClinicalNoteDrafts.TryGetValue(Id, out var draft))
+            {
+                clinicalNote = new ClinicalNoteModel
+                {
+                    Subjective = draft.Subjective,
+                    Assessment = draft.Assessment,
+                    Plan = draft.Plan,
+                    InteractiveCommunicationCompleted = draft.InteractiveCommunicationCompleted,
+                    CommunicationType = draft.CommunicationType,
+                    ClinicalMinutes = draft.ClinicalMinutes,
+                    AppDaysCount = draft.AppDaysCount,
+                    AdherenceRate = draft.AdherenceRate,
+                    ObjectiveDone = draft.ObjectiveDone,
+                    AssessmentDone = draft.AssessmentDone,
+                    PlanDone = draft.PlanDone,
+                    SubjectiveDone = draft.SubjectiveDone,
+                    IsInitialInteraction = draft.IsInitialInteraction,
+                    SelectedCptCode = draft.SelectedCptCode ?? "",
+                    IsSigned = false,
+                    CreatedAt = draft.Timestamp // Use timestamp as creation date for UI
+                };
+                _baseMinutes = draft.ClinicalMinutes;
+                _noteOpenedAtSeconds = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(Id, 0);
+                _manualMinutesAdjustment = 0;
+                _timeFrozen = false;
+            }
+            else
+            {
+                // NEW note — live timer starts from zero; ALL AppState seconds
+                // (page-view + chat + SOAP time) count as therapy time.
+                _noteOpenedAtSeconds = 0;
+                _baseMinutes = 0;
+                _manualMinutesAdjustment = 0;
+                _timeFrozen = false;
+                clinicalNote = new ClinicalNoteModel
+                {
+                    CreatedAt = DateTime.UtcNow,
+                    ClinicalMinutes = 0, // live timer syncs this every second
+                    AppDaysCount = AppDaysCount,
+                    AdherenceRate = AdherenceRate,
+                    IsInitialInteraction = isFirstTimePatient,
+                    SelectedCptCode = isFirstTimePatient ? "98975" : ""
+                };
+                clinicalNote.AuditEntries.Add(new AuditEntry { Action = "Session note created", Detail = "Review initialized", Time = DateTime.Now });
+
+                try
+                {
+                    var client = HttpClientFactory.CreateClient();
+                    var payload = new { 
+                        patientId = Id, 
+                        providerId = EffectiveOperatorId,
+                        patientMemberType = "Patient",
+                        providerMemberType = AppState.Role ?? "Provider"
+                    };
+                    
+                    Console.WriteLine($"[RTM Note Editor] Triggering CreateEncounter API");
+                    Console.WriteLine($"[RTM Note Editor] Payload: {System.Text.Json.JsonSerializer.Serialize(payload)}");
+
+                    // Run the request in the background so we can await and log its response without blocking UI
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            // 1. Create Encounter interaction
+                            var response = await client.PostAsJsonAsync("https://membyapi.azurewebsites.net/memby/api/Encounters/CreateEncounter", payload);
+                            if (response.IsSuccessStatusCode)
+                            {
+                                var result = await response.Content.ReadFromJsonAsync<EncounterResponse>();
+                                if (result != null)
+                                {
+                                    Console.WriteLine($"[RTM Note Editor] CreateEncounter SUCCESS");
+                                    Console.WriteLine($"[RTM Note Editor] Response: {System.Text.Json.JsonSerializer.Serialize(result)}");
+                                    
+                                    // Synchronize state with API response
+                                    isFirstTimePatient = result.IsFirstTime;
+                                    clinicalNote.EncounterId = result.EncounterId;
+                                    
+                                    // Calculate days since initial setup
+                                    _daysSinceSetup = (int)Math.Floor((DateTime.UtcNow - result.TimestampUtc).TotalDays);
+
+                                    // 2. Chain Billing Eligibility Check
+                                    var eligibilityPayload = new { patientId = Id };
+                                    Console.WriteLine($"[RTM Note Editor] Triggering Billing/Eligibility API");
+                                    Console.WriteLine($"[RTM Note Editor] Payload: {System.Text.Json.JsonSerializer.Serialize(eligibilityPayload)}");
+
+                                    var eligibilityResponse = await client.PostAsJsonAsync("https://membyapi.azurewebsites.net/memby/api/Billing/Eligibility", eligibilityPayload);
+                                    if (eligibilityResponse.IsSuccessStatusCode)
+                                    {
+                                        var eligibilityResult = await eligibilityResponse.Content.ReadFromJsonAsync<BillingEligibilityResponse>();
+                                        if (eligibilityResult != null)
+                                        {
+                                            Console.WriteLine($"[RTM Note Editor] Billing/Eligibility SUCCESS");
+                                            Console.WriteLine($"[RTM Note Editor] Response: {System.Text.Json.JsonSerializer.Serialize(eligibilityResult)}");
+
+                                            _eligibleCodes = eligibilityResult.EligibleCodes;
+                                            _disabledCodes = eligibilityResult.DisabledCodes.Select(d => d.Code).ToList();
+
+                                            // Enforce scenario constraints based on first-time status
+                                            if (isFirstTimePatient)
+                                            {
+                                                clinicalNote.IsInitialInteraction = true;
+                                                clinicalNote.IsDeviceSupply = false;
+                                                clinicalNote.SelectedCptCode = "98975";
+                                                clinicalNote.AuditEntries.Add(new AuditEntry 
+                                                { 
+                                                    Action = "First-time Scenario Enforced", 
+                                                    Detail = $"Encounter {result.EncounterId} locked to 98975 per API", 
+                                                    Time = DateTime.Now 
+                                                });
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        var errorContent = await eligibilityResponse.Content.ReadAsStringAsync();
+                                        Console.WriteLine($"[RTM Note Editor] Eligibility API Error: {eligibilityResponse.StatusCode} - {errorContent}");
+                                    }
+                                    
+                                    await InvokeAsync(StateHasChanged);
+                                }
+                            }
+                            else
+                            {
+                                var content = await response.Content.ReadAsStringAsync();
+                                Console.WriteLine($"[RTM Note Editor] CreateEncounter ERROR: {response.StatusCode} - {content}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[RTM Note Editor] Background API Error: {ex.Message}");
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"API Error: {ex.Message}");
+                }
+            }
+        }
+        catch
+        {
+            NotificationService.Error("Error", "Failed to load clinical notes.");
+        }
+        finally
+        {
+            isLoadingNote = false;
+        }
+
+        speechActiveField = null;
+        speechStatusMessage = speechRecognitionSupported
+            ? "Tap the mic to dictate."
+            : "Speech recognition is unavailable in this browser.";
+        showDebugPanel = false;
+        debugCreatedAtLocal = null;
+
+        // Start the live therapy-time timer (skip if note is already signed)
+        _liveTimer?.Dispose();
+        if (!clinicalNote.IsSigned)
+        {
+            _liveTimer = new System.Threading.Timer(_ =>
+            {
+                if (_timeFrozen) return;
+                var currentSeconds = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(Id, 0);
+                var elapsed = currentSeconds - _noteOpenedAtSeconds;
+                var liveMinutes = _baseMinutes + (int)Math.Ceiling(elapsed / 60.0) + _manualMinutesAdjustment;
+                clinicalNote.ClinicalMinutes = Math.Max(0, Math.Min(60, liveMinutes));
+                InvokeAsync(StateHasChanged);
+            }, null, 0, 1000);
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        await StopSpeechInputAsync();
+        SaveDraftToAppState();
+        AppState.ResumeReviewTimer(Id);
+        showReviewPopup = false;
+        showDebugPanel = false;
+        debugCreatedAtLocal = null;
+        await OnClose.InvokeAsync();
+    }
+
+    private void SaveDraftToAppState()
+    {
+        if (clinicalNote.IsSigned) return;
+
+        var draft = new ClinicalNoteVersion
+        {
+            Subjective = clinicalNote.Subjective,
+            Assessment = clinicalNote.Assessment,
+            Plan = clinicalNote.Plan,
+            InteractiveCommunicationCompleted = clinicalNote.InteractiveCommunicationCompleted,
+            CommunicationType = clinicalNote.CommunicationType,
+            ClinicalMinutes = clinicalNote.ClinicalMinutes,
+            AppDaysCount = clinicalNote.AppDaysCount,
+            AdherenceRate = clinicalNote.AdherenceRate,
+            SubjectiveDone = clinicalNote.SubjectiveDone,
+            ObjectiveDone = clinicalNote.ObjectiveDone,
+            AssessmentDone = clinicalNote.AssessmentDone,
+            PlanDone = clinicalNote.PlanDone,
+            IsInitialInteraction = clinicalNote.IsInitialInteraction,
+            SelectedCptCode = clinicalNote.SelectedCptCode,
+            Timestamp = clinicalNote.CreatedAt // Persist original creation time
+        };
+
+        AppState.ClinicalNoteDrafts[Id] = draft;
+    }
+
+    private void OpenDebugPanel()
+    {
+        debugCreatedAtLocal ??= clinicalNote.CreatedAt.ToLocalTime();
+        showDebugPanel = true;
+        StateHasChanged();
+    }
+
+    private void CloseDebugPanel()
+    {
+        showDebugPanel = false;
+    }
+
+    private string GetDebugCreatedDateInput() => DisplayedCreatedAt.ToString("yyyy-MM-dd");
+
+    private void HandleDebugCreatedDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var parsed))
+        {
+            debugCreatedAtLocal = parsed.Date;
+        }
+    }
+
+    private void SetDebugDateToday()
+    {
+        debugCreatedAtLocal = DateTime.Today;
+    }
+
+    private void SetDebugDateSixteenDaysAgo()
+    {
+        debugCreatedAtLocal = DateTime.Today.AddDays(-16);
+    }
+
+    private void ResetDebugCreatedDate()
+    {
+        debugCreatedAtLocal = null;
+    }
+
+    private async Task OpenReview()
+    {
+        // ── Freeze the therapy timer ────────────────────────────────────────
+        // SOAP documentation time is now complete. Capture the final minute
+        // count before the clinician proceeds to sign.
+        if (!_timeFrozen)
+        {
+            _timeFrozen = true;
+            AppState.PauseReviewTimer(Id);
+            _liveTimer?.Dispose();
+            _liveTimer = null;
+            var currentSeconds = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(Id, 0);
+            var elapsed = currentSeconds - _noteOpenedAtSeconds;
+            var finalMinutes = _baseMinutes + (int)Math.Ceiling(elapsed / 60.0) + _manualMinutesAdjustment;
+            clinicalNote.ClinicalMinutes = Math.Max(0, Math.Min(60, finalMinutes));
+            clinicalNote.AuditEntries.Add(new AuditEntry
+            {
+                Action = "Therapy Time Frozen",
+                Detail = $"Final clinical minutes locked at {clinicalNote.ClinicalMinutes}m before review",
+                Time = DateTime.Now
+            });
+        }
+        // ───────────────────────────────────────────────────────────────────
+
+        var unmetCritical = GetNoteRequirements().FirstOrDefault(r => r.Critical && !r.Met);
+
+        if (unmetCritical != null)
+        {
+            showValidationErrors = true;
+            NotificationService.Warning("Completion Required", $"Missing: {unmetCritical.Label}");
+            if (!string.IsNullOrEmpty(unmetCritical.TargetId))
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{unmetCritical.TargetId}').scrollIntoView({{ behavior: 'smooth', block: 'center' }})");
+            }
+            StateHasChanged();
+            return;
+        }
+
+        showReviewPopup = true;
+        reviewScrolledToBottom = false;
+        pendingReviewScrollCheck = true;
+        StateHasChanged();
+    }
+
+    private void CloseReview() => showReviewPopup = false;
+
+    private void AskForSecurePin()
+    {
+        securePin = "";
+        showPinPopup = true;
+    }
+
+    private void ClosePinPopup()
+    {
+        showPinPopup = false;
+        securePin = "";
+    }
+
+    private async Task ConfirmPinAndSign()
+    {
+        // Currently allow anything if length >= 6 
+        // In the future this will connect to an API for true validation.
+        showPinPopup = false;
+        await SignClinicalNote();
+    }
+
+    private async Task HandleReviewScroll()
+    {
+        await UpdateReviewScrollStateAsync();
+    }
+
+    private async Task UpdateReviewScrollStateAsync()
+    {
+        try
+        {
+            reviewScrolledToBottom = await JS.InvokeAsync<bool>(
+                "eval",
+                "(() => { const el = document.getElementById('cn-review-body'); if (!el) return false; return el.scrollHeight - el.scrollTop - el.clientHeight <= 8; })()");
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task SignClinicalNote()
+    {
+        _timeFrozen = true;
+        AppState.PauseReviewTimer(Id);
+        _liveTimer?.Dispose();
+        _liveTimer = null;
+
+        var unmetCritical = GetNoteRequirements().FirstOrDefault(r => r.Critical && !r.Met);
+
+        if (unmetCritical != null)
+        {
+            showValidationErrors = true;
+            NotificationService.Warning("Completion Required", "Documentation is incomplete.");
+            if (!string.IsNullOrEmpty(unmetCritical.TargetId))
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{unmetCritical.TargetId}').scrollIntoView({{ behavior: 'smooth', block: 'center' }})");
+            }
+            return;
+        }
+
+        try
+        {
+            await StopSpeechInputAsync();
+
+            var version = new ClinicalNoteVersion
+            {
+                Subjective = clinicalNote.Subjective,
+                Assessment = clinicalNote.Assessment,
+                Plan = clinicalNote.Plan,
+                InteractiveCommunicationCompleted = clinicalNote.InteractiveCommunicationCompleted,
+                CommunicationType = clinicalNote.CommunicationType,
+                ClinicalMinutes = clinicalNote.ClinicalMinutes,
+                AppDaysCount = clinicalNote.AppDaysCount,
+                AdherenceRate = clinicalNote.AdherenceRate,
+                SubjectiveDone = clinicalNote.SubjectiveDone,
+                ObjectiveDone = clinicalNote.ObjectiveDone,
+                AssessmentDone = clinicalNote.AssessmentDone,
+                PlanDone = clinicalNote.PlanDone,
+                IsInitialInteraction = clinicalNote.IsInitialInteraction,
+                SelectedCptCode = clinicalNote.SelectedCptCode,
+                IsFinal = true
+            };
+
+            try
+            {
+                var note = await ClinicalNoteService.SaveNoteAsync(Id, EffectiveOperatorId, version, amendmentReason);
+                var success = await ClinicalNoteService.SignNoteAsync(note.Id, OperatorName);
+                if (success)
+                {
+                    clinicalNote.IsSigned = true;
+                    clinicalNote.SignedAt = DateTime.UtcNow;
+                    clinicalNote.SignedBy = OperatorName;
+                }
+            }
+            catch
+            {
+                clinicalNote.IsSigned = true;
+                clinicalNote.SignedAt = DateTime.UtcNow;
+                clinicalNote.SignedBy = OperatorName;
+            }
+
+            AppState.ClinicalNoteDrafts.Remove(Id);
+            AppState.ResetReviewTime(Id);
+            NotificationService.Success("Signed", "Note locked & review clock reset.");
+            await OnSigned.InvokeAsync();
+        }
+        catch
+        {
+            NotificationService.Error("Error", "Failed to sign note accurately.");
+        }
+    }
+
+    private async Task AddMinutes(int minutes)
+    {
+        if (string.IsNullOrEmpty(currentSessionJustification))
+        {
+            var reason = await JS.InvokeAsync<string>("prompt", "Reason for time adjustment (this will be applied to this session's logs):", "Clinical data review");
+            if (string.IsNullOrEmpty(reason))
+            {
+                return;
+            }
+            currentSessionJustification = reason;
+        }
+
+        // Adjust the manual offset; the live timer will clamp and sync ClinicalMinutes on next tick.
+        _manualMinutesAdjustment += minutes;
+        clinicalNote.AuditEntries.Add(new AuditEntry { Action = "Time Adjusted", Detail = $"+{minutes}m manual adjustment", Time = DateTime.Now });
+        StateHasChanged();
+
+        try
+        {
+            await TimeTrackingService.LogTimeAsync(Id, EffectiveOperatorId, minutes, "Review", currentSessionJustification);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task RemoveMinutes(int minutes)
+    {
+        if (string.IsNullOrEmpty(currentSessionJustification))
+        {
+            var reason = await JS.InvokeAsync<string>("prompt", "Reason for time adjustment (this will be applied to this session's logs):", "Correction");
+            if (string.IsNullOrEmpty(reason))
+            {
+                return;
+            }
+            currentSessionJustification = reason;
+        }
+
+        // Adjust the manual offset; the live timer will clamp and sync ClinicalMinutes on next tick.
+        _manualMinutesAdjustment -= minutes;
+        clinicalNote.AuditEntries.Add(new AuditEntry { Action = "Time Adjusted", Detail = $"-{minutes}m manual adjustment", Time = DateTime.Now });
+        StateHasChanged();
+
+        try
+        {
+            await TimeTrackingService.LogTimeAsync(Id, EffectiveOperatorId, -minutes, "Adjustment", currentSessionJustification);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task SaveAmendment()
+    {
+        if (string.IsNullOrWhiteSpace(amendmentReason))
+        {
+            NotificationService.Warning("Amendment Reason", "Please provide a reason for this amendment.");
+            return;
+        }
+
+        try
+        {
+            var version = new ClinicalNoteVersion
+            {
+                Subjective = clinicalNote.Subjective,
+                Assessment = clinicalNote.Assessment,
+                Plan = clinicalNote.Plan,
+                InteractiveCommunicationCompleted = clinicalNote.InteractiveCommunicationCompleted,
+                CommunicationType = clinicalNote.CommunicationType,
+                ClinicalMinutes = clinicalNote.ClinicalMinutes,
+                AppDaysCount = clinicalNote.AppDaysCount,
+                AdherenceRate = clinicalNote.AdherenceRate,
+                SubjectiveDone = clinicalNote.SubjectiveDone,
+                ObjectiveDone = clinicalNote.ObjectiveDone,
+                AssessmentDone = clinicalNote.AssessmentDone,
+                PlanDone = clinicalNote.PlanDone,
+                IsInitialInteraction = clinicalNote.IsInitialInteraction,
+                SelectedCptCode = clinicalNote.SelectedCptCode
+            };
+
+            var note = await ClinicalNoteService.SaveNoteAsync(Id, EffectiveOperatorId, version, amendmentReason);
+            noteHistory = await ClinicalNoteService.GetNoteHistoryAsync(note.Id);
+            amendmentReason = "";
+            NotificationService.Success("Saved", "Amendment added to note history.");
+            StateHasChanged();
+        }
+        catch
+        {
+            NotificationService.Error("Error", "Failed to save amendment.");
+        }
+    }
+
+    private async Task ToggleSectionDone(string section, bool? newState = null)
+    {
+        var isNowDone = false;
+        var nextSectionId = "";
+
+        switch (section.ToLowerInvariant())
+        {
+            case "subjective":
+                clinicalNote.SubjectiveDone = newState ?? !clinicalNote.SubjectiveDone;
+                isNowDone = clinicalNote.SubjectiveDone;
+                nextSectionId = "section-objective";
+                break;
+            case "objective":
+                if (newState.HasValue)
+                {
+                    clinicalNote.InteractiveCommunicationCompleted = newState.Value;
+                }
+                clinicalNote.ObjectiveDone = clinicalNote.InteractiveCommunicationCompleted;
+                isNowDone = clinicalNote.ObjectiveDone;
+                nextSectionId = "section-assessment";
+                break;
+            case "assessment":
+                clinicalNote.AssessmentDone = newState ?? !clinicalNote.AssessmentDone;
+                isNowDone = clinicalNote.AssessmentDone;
+                nextSectionId = "section-plan";
+                break;
+            case "plan":
+                clinicalNote.PlanDone = newState ?? !clinicalNote.PlanDone;
+                isNowDone = clinicalNote.PlanDone;
+                break;
+        }
+
+        clinicalNote.AuditEntries.Add(new AuditEntry
+        {
+            Action = $"{section} Section {(isNowDone ? "Marked Final" : "Reopened")}",
+            Detail = $"Confirmed by {OperatorName}",
+            Time = DateTime.Now
+        });
+
+        if (isNowDone && !string.IsNullOrEmpty(nextSectionId))
+        {
+            await JS.InvokeVoidAsync("eval", $"document.getElementById('{nextSectionId}').scrollIntoView({{ behavior: 'smooth', block: 'center' }})");
+        }
+
+        if (!GetNoteRequirements().Any(r => r.Critical && !r.Met))
+        {
+            showValidationErrors = false;
+        }
+
+        SaveDraftToAppState();
+        StateHasChanged();
+    }
+
+    private string GetRtmTierClass()
+    {
+        if (DisplayedAppDaysCount < 16 || clinicalNote.ClinicalMinutes < 10)
+        {
+            return string.Empty;
+        }
+
+        if (clinicalNote.ClinicalMinutes >= 40)
+        {
+            return "cpt-active cpt-tier-40";
+        }
+
+        if (clinicalNote.ClinicalMinutes >= 20)
+        {
+            return "cpt-active cpt-tier-20";
+        }
+
+        return "cpt-active cpt-tier-10";
+    }
+
+    private string GetRtmTierLabel()
+    {
+        if (DisplayedAppDaysCount < 16 || clinicalNote.ClinicalMinutes < 10)
+        {
+            return "< 10 min needed";
+        }
+
+        var activeCode = GetActiveCptCode();
+        return string.IsNullOrEmpty(activeCode) ? "Pending Selection" : activeCode;
+    }
+
+    private string GetActiveCptCode()
+    {
+        if (!string.IsNullOrEmpty(clinicalNote.SelectedCptCode))
+        {
+            return clinicalNote.SelectedCptCode;
+        }
+
+        return "";
+    }
+
+    private decimal GetEstimatedRevenue()
+    {
+        return GetActiveCptCode() switch
+        {
+            "97161" => debugRevenue97161,
+            "97162" => debugRevenue97162,
+            "97163" => debugRevenue97163,
+            "97165" => debugRevenue97165,
+            "97166" => debugRevenue97166,
+            "97167" => debugRevenue97167,
+            "90791" => debugRevenue90791,
+            "98975" => debugRevenue98975,
+            "98978" => debugRevenue98978,
+            "97110" => debugRevenue97110,
+            "97530" => debugRevenue97530,
+            "98966" => debugRevenue98966,
+            "98979" => debugRevenue98979,
+            "98980" => debugRevenue98980,
+            "98981" => debugRevenue98981,
+            _ => 0m
+        };
+    }
+
+    private void SetSessionType(SessionType type)
+    {
+        clinicalNote.IsInitialInteraction = type == SessionType.InitialEval;
+        clinicalNote.IsDeviceSupply = type == SessionType.DeviceSupply;
+        clinicalNote.SelectedCptCode = "";
+        StateHasChanged();
+    }
+
+    private void SelectCptCode(string code)
+    {
+        clinicalNote.SelectedCptCode = code;
+        StateHasChanged();
+    }
+
+    private List<(string Code, string Description, bool Recommended)> GetSuggestedCptCodes()
+    {
+        var suggestions = new List<(string, string, bool)>();
+
+        // 1. If API data is available, use it as the source of truth
+        if (_eligibleCodes.Any())
+        {
+            foreach (var eligible in _eligibleCodes)
+            {
+                bool isRelevant = false;
+                if (clinicalNote.IsInitialInteraction && eligible.Code == "98975") isRelevant = true;
+                else if (clinicalNote.IsDeviceSupply && eligible.Code == "98978") isRelevant = true;
+                else if (!clinicalNote.IsInitialInteraction && !clinicalNote.IsDeviceSupply)
+                {
+                    // Follow-up codes
+                    if (eligible.Code == "98979" || eligible.Code.StartsWith("9898") || eligible.Code.StartsWith("971") || eligible.Code.StartsWith("907") || eligible.Code == "98966")
+                        isRelevant = true;
+                }
+
+                if (isRelevant)
+                {
+                    suggestions.Add((eligible.Code, GetLocalCptDescription(eligible.Code), true));
+                }
+            }
+            return suggestions;
+        }
+
+        // 2. Fallback to legacy logic if API hasn't responded yet
+        if (isFirstTimePatient)
+        {
+            suggestions.Add(("98975", "Setup & Education (Required)", true));
+            return suggestions;
+        }
+
+        var isRtmEligible = DisplayedAppDaysCount >= 16;
+        if (!isRtmEligible)
+        {
+            if (clinicalNote.IsInitialInteraction) suggestions.Add(("98975", "Setup & Education", true));
+            else if (clinicalNote.IsDeviceSupply) suggestions.Add(("98978", "Device Supply (Req. 16 days)", false));
+            else
+            {
+                suggestions.Add(("97110", "Therapeutic Exercise", true));
+                suggestions.Add(("97530", "Therapeutic Activities", false));
+            }
+        }
+        else
+        {
+            if (clinicalNote.IsInitialInteraction) suggestions.Add(("98975", "Setup & Education", true));
+            else if (clinicalNote.IsDeviceSupply) suggestions.Add(("98978", "Device Supply", true));
+            else
+            {
+                if (clinicalNote.ClinicalMinutes >= 40) suggestions.Add(("98981", "RTM Add-on (40m)", true));
+                if (clinicalNote.ClinicalMinutes >= 20) suggestions.Add(("98980", "RTM Treatment (20m)", true));
+                if (clinicalNote.ClinicalMinutes >= 10) suggestions.Add(("98979", "RTM Monitoring", true));
+            }
+        }
+
+        return suggestions;
+    }
+
+    private string GetLocalCptDescription(string code)
+    {
+        return code switch
+        {
+            "98975" => "RTM Setup & Education",
+            "98978" => "RTM Device Supply (MSK)",
+            "98979" => "RTM Monitoring",
+            "98980" => "RTM Management (first 20m)",
+            "98981" => "RTM Management Add-on",
+            "97110" => "Therapeutic Exercise",
+            "97530" => "Therapeutic Activities",
+            "98966" => "Phone Consult",
+            _ => "Clinical Interaction"
+        };
+    }
+
+    private IEnumerable<NoteRequirement> GetNoteRequirements()
+    {
+        var activeCode = GetActiveCptCode();
+        var isRtmCode = !string.IsNullOrEmpty(activeCode) && (activeCode.StartsWith("9897") || activeCode.StartsWith("9898"));
+        var rtmDaysMet = DisplayedAppDaysCount >= 16;
+
+        yield return new NoteRequirement { Label = "Verbal/Written Consent", Met = true, Critical = true };
+        yield return new NoteRequirement { Label = "Billing Pathway Valid", Met = !string.IsNullOrEmpty(activeCode) && (!isRtmCode || rtmDaysMet || _eligibleCodes.Any(c => c.Code == activeCode)), Critical = true };
+        yield return new NoteRequirement { Label = "CPT Code Strategy", Met = !string.IsNullOrEmpty(activeCode) && activeCode != "Non-billable", Critical = true };
+        
+        var currentEligible = _eligibleCodes.FirstOrDefault(c => c.Code == activeCode);
+        bool narrativeRequired = currentEligible?.RequiresClinicalNote ?? true;
+
+        yield return new NoteRequirement { Label = "Subjective Summary Ready", Met = clinicalNote.SubjectiveDone || !narrativeRequired, Critical = narrativeRequired, TargetId = "section-subjective" };
+        yield return new NoteRequirement { Label = "Objective Evidence Reviewed", Met = clinicalNote.ObjectiveDone, Critical = true, TargetId = "section-objective" };
+        yield return new NoteRequirement { Label = "Assessment Finalized", Met = clinicalNote.AssessmentDone || !narrativeRequired, Critical = narrativeRequired, TargetId = "section-assessment" };
+        yield return new NoteRequirement { Label = "Plan & Follow-up Documented", Met = clinicalNote.PlanDone || !narrativeRequired, Critical = narrativeRequired, TargetId = "section-plan" };
+        yield return new NoteRequirement { Label = "Interactive Comm. Verified", Met = clinicalNote.InteractiveCommunicationCompleted || activeCode == "98975" || activeCode == "98978" || clinicalNote.IsInitialInteraction || clinicalNote.IsDeviceSupply, Critical = true, TargetId = "section-objective" };
+
+        if (isRtmCode && activeCode != "98975" && activeCode != "98978")
+        {
+            yield return new NoteRequirement { Label = "Min. 10m Professional Time", Met = clinicalNote.ClinicalMinutes >= 10, Critical = true };
+        }
+    }
+
+    private async Task ToggleSpeechInputAsync(SpeechField field)
+    {
+        if (clinicalNote.IsSigned || !speechRecognitionSupported)
+        {
+            return;
+        }
+
+        if (speechActiveField == field)
+        {
+            await StopSpeechInputAsync();
+            return;
+        }
+
+        speechInteropRef ??= DotNetObjectReference.Create(this);
+
+        var started = false;
+        try
+        {
+            started = await JS.InvokeAsync<bool>("childDetailSpeech.start", speechInteropRef, field.ToString(), GetSpeechFieldValue(field));
+        }
+        catch
+        {
+            started = false;
+        }
+
+        if (!started)
+        {
+            speechRecognitionSupported = false;
+            speechActiveField = null;
+            speechStatusMessage = "Speech recognition is unavailable in this browser.";
+            NotificationService.Error("Speech Unavailable", "This browser does not support speech-to-text.");
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task StopSpeechInputAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("childDetailSpeech.stop");
+        }
+        catch
+        {
+        }
+
+        speechActiveField = null;
+        speechStatusMessage = speechRecognitionSupported
+            ? "Tap the mic to dictate."
+            : "Speech recognition is unavailable in this browser.";
+    }
+
+    [JSInvokable]
+    public Task UpdateSpeechText(string fieldName, string value)
+    {
+        if (Enum.TryParse<SpeechField>(fieldName, out var field))
+        {
+            SetSpeechFieldValue(field, value);
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task UpdateSpeechStatus(string fieldName, bool isListening, string? message)
+    {
+        if (Enum.TryParse<SpeechField>(fieldName, out var field))
+        {
+            speechActiveField = isListening ? field : null;
+        }
+        else if (!isListening)
+        {
+            speechActiveField = null;
+        }
+
+        speechStatusMessage = string.IsNullOrWhiteSpace(message)
+            ? (speechRecognitionSupported ? "Tap the mic to dictate." : "Speech recognition is unavailable in this browser.")
+            : message;
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private string GetSpeechButtonLabel(SpeechField field)
+    {
+        if (!speechRecognitionSupported)
+        {
+            return "Mic unavailable";
+        }
+
+        return speechActiveField == field ? "Stop dictation" : "Dictate";
+    }
+
+    private string GetSpeechHint(SpeechField field)
+    {
+        if (!speechRecognitionSupported)
+        {
+            return "Requires Chrome or Edge with speech recognition support.";
+        }
+
+        if (speechActiveField == field)
+        {
+            return "Listening...";
+        }
+
+        return string.IsNullOrWhiteSpace(speechStatusMessage)
+            ? "Tap the mic to dictate."
+            : speechStatusMessage;
+    }
+
+    private string GetSpeechFieldValue(SpeechField field)
+    {
+        return field switch
+        {
+            SpeechField.Subjective => clinicalNote.Subjective,
+            SpeechField.Assessment => clinicalNote.Assessment,
+            SpeechField.Plan => clinicalNote.Plan,
+            _ => string.Empty
+        };
+    }
+
+    private void SetSpeechFieldValue(SpeechField field, string value)
+    {
+        switch (field)
+        {
+            case SpeechField.Subjective:
+                clinicalNote.Subjective = value;
+                break;
+            case SpeechField.Assessment:
+                clinicalNote.Assessment = value;
+                break;
+            case SpeechField.Plan:
+                clinicalNote.Plan = value;
+                break;
+        }
+    }
+
+    private int GetSoapCompletionCount()
+    {
+        var completeCount = 0;
+        if (!string.IsNullOrWhiteSpace(clinicalNote.Subjective)) completeCount++;
+        if (!string.IsNullOrWhiteSpace(clinicalNote.Assessment)) completeCount++;
+        if (!string.IsNullOrWhiteSpace(clinicalNote.Plan)) completeCount++;
+        return completeCount;
+    }
+
+    private string GetClinicalStatusText()
+    {
+        var unmet = GetNoteRequirements().Where(r => r.Critical && !r.Met).ToList();
+        if (!unmet.Any()) return "Ready to sign";
+        if (clinicalNote.ClinicalMinutes >= 10 || clinicalNote.InteractiveCommunicationCompleted || GetSoapCompletionCount() > 0) return "In Progress";
+        return "Draft";
+    }
+
+    private string GetClinicalStatusClass()
+    {
+        var unmet = GetNoteRequirements().Where(r => r.Critical && !r.Met).ToList();
+        if (!unmet.Any()) return "is-ready";
+        if (clinicalNote.ClinicalMinutes >= 10 || clinicalNote.InteractiveCommunicationCompleted || GetSoapCompletionCount() > 0) return "is-progress";
+        return "is-draft";
+    }
+
+    private char GetChildInitial()
+    {
+        return string.IsNullOrWhiteSpace(ChildDisplayName) ? 'C' : ChildDisplayName.Trim()[0];
+    }
+
+    private string EffectiveOperatorId => string.IsNullOrWhiteSpace(OperatorId) ? OperatorName : OperatorId;
+
+    public void Dispose()
+    {
+        _liveTimer?.Dispose();
+        speechInteropRef?.Dispose();
+    }
+
+    private enum SpeechField
+    {
+        Subjective,
+        Assessment,
+        Plan
+    }
+
+    private enum SessionType
+    {
+        FollowUp,
+        InitialEval,
+        DeviceSupply
+    }
+
+    private sealed class EncounterResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("encounterId")]
+        public string EncounterId { get; set; } = "";
+
+        [System.Text.Json.Serialization.JsonPropertyName("isFirstTime")]
+        public bool IsFirstTime { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("timestampUtc")]
+        public DateTime TimestampUtc { get; set; }
+    }
+
+    private sealed class EligibleCodeDto
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("code")]
+        public string Code { get; set; } = "";
+
+        [System.Text.Json.Serialization.JsonPropertyName("requiresClinicalNote")]
+        public bool RequiresClinicalNote { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("lockAfterUse")]
+        public bool LockAfterUse { get; set; }
+    }
+
+    private sealed class DisabledCodeDto
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("code")]
+        public string Code { get; set; } = "";
+    }
+
+    private sealed class BillingEligibilityResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("eligibleCodes")]
+        public List<EligibleCodeDto> EligibleCodes { get; set; } = new();
+
+        [System.Text.Json.Serialization.JsonPropertyName("disabledCodes")]
+        public List<DisabledCodeDto> DisabledCodes { get; set; } = new();
+    }
+
+    private sealed class ClinicalNoteModel
+    {
+        public string Subjective { get; set; } = "";
+        public string Assessment { get; set; } = "";
+        public string Plan { get; set; } = "";
+        public bool SubjectiveDone { get; set; }
+        public bool ObjectiveDone { get; set; }
+        public bool AssessmentDone { get; set; }
+        public bool PlanDone { get; set; }
+        public bool InteractiveCommunicationCompleted { get; set; }
+        public string? CommunicationType { get; set; }
+        public bool IsSigned { get; set; }
+        public int ClinicalMinutes { get; set; }
+        public int AppDaysCount { get; set; }
+        public int AdherenceRate { get; set; }
+        public bool IsInitialInteraction { get; set; }
+        public bool IsDeviceSupply { get; set; }
+        public string SelectedCptCode { get; set; } = "";
+        public string EncounterId { get; set; } = "";
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? SignedAt { get; set; }
+        public string? SignedBy { get; set; }
+        public List<AuditEntry> AuditEntries { get; set; } = new();
+    }
+
+    private sealed class AuditEntry
+    {
+        public string Action { get; set; } = "";
+        public string Detail { get; set; } = "";
+        public DateTime Time { get; set; } = DateTime.Now;
+    }
+
+    private sealed class NoteRequirement
+    {
+        public string Label { get; set; } = "";
+        public bool Met { get; set; }
+        public bool Critical { get; set; }
+        public string? TargetId { get; set; }
+    }
+
+    private sealed class ProviderProfile
+    {
+        public string Acronym { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string Initials => Acronym.Length >= 2 ? Acronym.Substring(0, 2) : Acronym;
+        public string Subtitle { get; set; } = "";
+        public string Track { get; set; } = "CBT / behavioral";
+        public string MedicareStatus { get; set; } = "Independent Part B provider";
+        public string BillingModifier { get; set; } = "None (QHCP)";
+        public string DropdownLabel => $"{Acronym} — {Title}";
+    }
+
+    private sealed class ProviderGroup
+    {
+        public string Category { get; set; } = "";
+        public List<ProviderProfile> Providers { get; set; } = new();
+    }
+
+    private List<ProviderGroup> ProviderGroups = new()
+    {
+        new ProviderGroup {
+            Category = "Mental Health",
+            Providers = new() {
+                new ProviderProfile { Acronym = "LCSW", Title = "Licensed Clinical Social Worker", Subtitle = "Mental Health", Track = "CBT / behavioral", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "LPC", Title = "Licensed Professional Counselor", Subtitle = "Mental Health", Track = "CBT / behavioral", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "LMFT", Title = "Licensed Marriage & Family Therapist", Subtitle = "Mental Health", Track = "CBT / behavioral", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "LMHC", Title = "Licensed Mental Health Counselor", Subtitle = "Mental Health", Track = "CBT / behavioral", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "LCPC", Title = "Licensed Clinical Professional Counselor", Subtitle = "Mental Health", Track = "CBT / behavioral", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "PhD", Title = "Clinical Psychologist", Subtitle = "Mental Health", Track = "CBT / behavioral", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "MD", Title = "Psychiatrist / Physician", Subtitle = "Mental Health", Track = "Medical management", MedicareStatus = "Independent Part B provider", BillingModifier = "None (QHCP)" },
+                new ProviderProfile { Acronym = "PMHNP", Title = "Psychiatric Mental Health Nurse", Subtitle = "Mental Health", Track = "Medical management", MedicareStatus = "Incident-to billing", BillingModifier = "None (QHCP)" }
+            }
+        },
+        new ProviderGroup {
+            Category = "Substance Use",
+            Providers = new() {
+                new ProviderProfile { Acronym = "CADC", Title = "Certified Alcohol & Drug Counselor", Subtitle = "Substance Use", Track = "CBT / behavioral", MedicareStatus = "Incident-to billing", BillingModifier = "None (QHCP)" }
+            }
+        },
+        new ProviderGroup {
+            Category = "Behavioral Health",
+            Providers = new() {
+                new ProviderProfile { Acronym = "BCBA", Title = "Board Certified Behavior Analyst", Subtitle = "Behavioral Health", Track = "CBT / behavioral", MedicareStatus = "Incident-to billing", BillingModifier = "None (QHCP)" }
+            }
+        },
+        new ProviderGroup {
+            Category = "Rehabilitation",
+            Providers = new() {
+                new ProviderProfile { Acronym = "PT", Title = "Physical Therapist", Subtitle = "Rehabilitation", Track = "Musculoskeletal", MedicareStatus = "Independent Part B provider", BillingModifier = "GP (PT Plan)" },
+                new ProviderProfile { Acronym = "PTA", Title = "Physical Therapist Assistant", Subtitle = "Rehabilitation", Track = "Musculoskeletal", MedicareStatus = "Under PT supervision", BillingModifier = "CQ (PTA Services)" },
+                new ProviderProfile { Acronym = "OT", Title = "Occupational Therapist", Subtitle = "Rehabilitation", Track = "Musculoskeletal", MedicareStatus = "Independent Part B provider", BillingModifier = "GO (OT Plan)" },
+                new ProviderProfile { Acronym = "COTA", Title = "Certified OT Assistant", Subtitle = "Rehabilitation", Track = "Musculoskeletal", MedicareStatus = "Under OT supervision", BillingModifier = "CO (COTA Services)" },
+                new ProviderProfile { Acronym = "SLP", Title = "Speech-Language Pathologist", Subtitle = "Rehabilitation", Track = "Cognitive / speech", MedicareStatus = "Independent Part B provider", BillingModifier = "GN (SLP Plan)" }
+            }
+        }
+    };
+}

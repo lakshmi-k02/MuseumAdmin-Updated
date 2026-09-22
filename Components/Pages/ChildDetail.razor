@@ -1,0 +1,1174 @@
+@page "/programs/{id:int}"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@using MuseumAdmin.Components.Shared
+@using MuseumAdmin.Models
+@using MuseumAdmin.Services
+@attribute [Authorize]
+@implements IDisposable
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+
+@inject UserService UserService
+@inject AppState AppState
+@inject NotificationService NotificationService
+@inject AuthenticationStateProvider AuthProvider
+@inject IJSRuntime JS
+@inject IClinicalNoteService ClinicalNoteService
+@inject ITimeTrackingService TimeTrackingService
+@inject IAuditService AuditService
+@inject NavigationManager NavManager
+
+<div class="fade-in detail-page-root">
+    <TopBar Title="@PageTitle" />
+
+    <div class="content-container">
+        <div class="header-nav-row">
+            <NavLink href="/programs" class="btn-back-link">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                <span>Back to Individuals</span>
+            </NavLink>
+        </div>
+
+        <div class="profile-header-card">
+            <div class="profile-header-top">
+                <div class="name-badge-group">
+                    <h1 class="child-name-display">@ChildDisplayName</h1>
+                    <span class="@StatusBadgeClass">@ChildStatusText</span>
+                </div>
+                <button class="btn-Provider-actions" @onclick="() => showActionsMenu = true" disabled="@isLoading">
+                    Provider Actions
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+            </div>
+            <div class="profile-header-meta">
+                <div class="meta-item">
+                    <span class="meta-label">Age:</span>
+                    <span class="meta-value">@ChildAgeText</span>
+                </div>
+                <div class="meta-divider"></div>
+                <div class="meta-item">
+                    <span class="meta-label">Assigned Provider:</span>
+                    <span class="meta-value">@AssignedProviderText</span>
+                </div>
+            </div>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="summary-metrics-row">
+                <div class="summary-metric-card loading-card">
+                    <span class="metric-title">Overall Adherence</span>
+                    <div class="loading-line loading-line-lg"></div>
+                    <div class="loading-line loading-line-md"></div>
+                    <div class="loading-bar"></div>
+                </div>
+
+                <div class="summary-metric-card loading-card">
+                    <span class="metric-title">Active Programs</span>
+                    <div class="loading-line loading-line-lg"></div>
+                    <div class="loading-line loading-line-md"></div>
+                    <div class="program-stacks">
+                        @for (var index = 0; index < 3; index++)
+                        {
+                            <div class="stack-bar loading-stack-bar"></div>
+                        }
+                    </div>
+                </div>
+
+                <div class="summary-metric-card loading-card">
+                    <span class="metric-title">Clinical Alerts</span>
+                    <div class="alerts-stack">
+                        @for (var index = 0; index < 2; index++)
+                        {
+                            <div class="alert-item">
+                                <div class="alert-icon-circle loading-alert-icon"></div>
+                                <div class="loading-line loading-line-fill"></div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="program-details-stack">
+                @for (var index = 0; index < 3; index++)
+                {
+                    <div class="program-row-card loading-card">
+                        <div class="program-info-col loading-program-info">
+                            <div class="loading-line loading-line-program-title"></div>
+                            <div class="loading-line loading-line-program-meta"></div>
+                        </div>
+                        <div class="program-progress-col loading-program-progress">
+                            <div class="loading-line loading-line-sm"></div>
+                            <div class="loading-circle"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="summary-metrics-row">
+                <div class="summary-metric-card">
+                    <span class="metric-title">Overall Adherence</span>
+                    <div class="metric-value-large-row">
+                        <span class="metric-percentage">@OverallAdherence%</span>
+                        <span class="metric-subtext">across all programs</span>
+                    </div>
+                    <div class="progress-track-wide">
+                        <div class="progress-fill-solid purple" style="--progress-width:@($"{OverallAdherence}%")"></div>
+                    </div>
+                </div>
+
+                <div class="summary-metric-card">
+                    <span class="metric-title">Active Programs</span>
+                    <div class="metric-value-large-row">
+                        <span class="metric-count">@ActiveProgramsCount</span>
+                        <span class="metric-subtext">currently assigned</span>
+                    </div>
+                    <div class="program-stacks">
+                        @foreach (var stackClass in ProgramStackBarClasses)
+                        {
+                            <div class="stack-bar @stackClass"></div>
+                        }
+                    </div>
+                </div>
+
+                <div class="summary-metric-card">
+                    <span class="metric-title">Clinical Alerts</span>
+                    <div class="alerts-stack">
+                        <div class="alert-item">
+                            <div class="alert-icon-circle warning">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                            </div>
+                            <span class="alert-text">Engagement dropped in week 3 of Social Skills program</span>
+                        </div>
+                        <div class="alert-item">
+                            <div class="alert-icon-circle info">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                            </div>
+                            <span class="alert-text">Completed 5 consecutive sessions in Emotional Regulation</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="program-details-stack">
+                @foreach (var program in DisplayedPrograms)
+                {
+                    <div class="program-card-wrapper" id="program-@program.Id">
+                        <div class="program-row-card">
+                            <div class="program-info-col">
+                            <div class="program-title-line">
+                                <h3 class="program-name">@program.Name</h3>
+                                @if (program.Trend == ProgramTrend.Up)
+                                {
+                                    <svg class="trend-icon up" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                                        <polyline points="17 6 23 6 23 12"></polyline>
+                                    </svg>
+                                }
+                                else
+                                {
+                                    <svg class="trend-icon neutral" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                        <line x1="7" y1="11" x2="17" y2="11"></line>
+                                        <line x1="7" y1="11" x2="10" y2="8"></line>
+                                        <line x1="7" y1="11" x2="10" y2="14"></line>
+                                        <line x1="17" y1="11" x2="14" y2="8"></line>
+                                        <line x1="17" y1="11" x2="14" y2="14"></line>
+                                    </svg>
+                                }
+                            </div>
+                            <div class="program-meta-line">
+                                <span class="meta-p">
+                                    <svg class="inline-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                    @program.ScheduleText
+                                </span>
+                                <span class="meta-sep"></span>
+                                <span class="meta-p">
+                                    <svg class="inline-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polyline points="12 6 12 12 16 14"></polyline>
+                                    </svg>
+                                    Last activity: @program.LastActivityText
+                                </span>
+                            </div>
+                        </div>
+                        <div class="program-progress-col">
+                            <div class="completion-text">
+                                <span class="comp-val">@program.CompletionRate%</span>
+                                <span class="comp-label">Completion</span>
+                            </div>
+                            <div class="circular-chart-box">
+                                <svg viewBox="0 0 36 36" class="circular-chart @program.ChartColor">
+                                    <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path class="circle" stroke-dasharray="@($"{program.CompletionRate}, 100")" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                </svg>
+                            </div>
+                            <div class="program-expand-hint" @onclick="() => program.IsCommentsExpanded = !program.IsCommentsExpanded" style="cursor: pointer; transition: transform 0.2s;" transform="@(program.IsCommentsExpanded ? "rotate(180)" : "")">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: @(program.IsCommentsExpanded ? "rotate(180deg)" : "none"); transition: transform 0.2s;">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </div>
+                        </div> <!-- Ends program-progress-col -->
+
+                        <!-- Hover Overlay -->
+                        @* <div class="program-hover-overlay">
+                            <div class="hover-actions-group">
+                                <button class="hover-action-btn" @onclick="() => { program.IsCommentsExpanded = true; program.ShowCommentInput = true; }" title="Comment">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                </button>
+                                <button class="hover-action-btn" title="Like">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div> *@
+                    </div> <!-- Ends program-row-card -->
+
+                    @if (program.IsCommentsExpanded)
+                    {
+                        <div class="program-comment-section">
+                            @if (program.Comments.Any())
+                            {
+                                <div class="comment-feed">
+                                    @foreach (var comment in program.Comments)
+                                    {
+                                        <div class="comment-post">
+                                            <div class="comment-avatar">@comment.AvatarInitials</div>
+                                            <div class="comment-content-area">
+                                                <div class="comment-header">
+                                                    <span class="comment-author">@comment.AuthorName</span>
+                                                    <span class="comment-time">@comment.Timestamp</span>
+                                                </div>
+                                                <div class="comment-body">@comment.Content</div>
+                                                <div class="program-hover-overlay">
+                                                    <div class="hover-actions-group">
+                                                        <button class="hover-action-btn" title="Comment" @onclick="() => FocusCommentInput(program.Id)" style="width: 28px; height: 28px;">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                                            </svg>
+                                                        </button>
+                                                        <button class="hover-action-btn" title="Like" @onclick="() => ToggleLike(comment)" style="width: 28px; height: 28px;">
+                                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="@(comment.HasLiked ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                @if (comment.LikesCount > 0)
+                                                {
+                                                    <div style="display: flex; align-items: center; gap: 4px; color: #f43f5e; font-size: 12px; font-weight: 600; margin-top: 4px;">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+                                                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                                        </svg>
+                                                        @comment.LikesCount
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="comment-input-row" style="margin-top: 16px; position: relative;">
+                                <div class="comment-avatar current-user-avatar">
+                                    @(operatorName.Length > 0 ? operatorName.Substring(0, 1).ToUpper() : "T")
+                                </div>
+                                <div style="position: relative; flex: 1; display: flex; align-items: center;">
+                                    <input id="comment-input-@program.Id" type="text" class="comment-input" @bind="program.NewComment" placeholder="Add a comment... 🌟👏" style="padding-right: 40px; width: 100%;" />
+                                    <button type="button" @onclick="() => program.ShowEmojiPicker = !program.ShowEmojiPicker" style="position: absolute; right: 8px; background: none; border: none; font-size: 18px; cursor: pointer; padding: 4px; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">😊</button>
+                                </div>
+                                <button class="btn-send-comment" @onclick="() => SaveProgramComment(program)">Post</button>
+
+                                @if (program.ShowEmojiPicker)
+                                {
+                                    <div class="emoji-picker-popup">
+                                        @foreach (var emoji in new[] { "👍", "❤️", "🎉", "🌟", "👏", "🙌", "💪", "😊", "🔥", "🚀", "✨", "💯" })
+                                        {
+                                            <button type="button" class="emoji-btn" @onclick="() => { program.NewComment += emoji; program.ShowEmojiPicker = false; }">@emoji</button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    </div> <!-- Ends program-card-wrapper -->
+                }
+            </div>
+
+            <section class="module-history-section">
+                <div class="section-heading-row">
+                    <div>
+                        <p class="section-kicker">Detailed Activity</p>
+                        <h2 class="section-title">Module responses and uploads</h2>
+                    </div>
+                    <span class="section-count">@completedModules.Count module@(completedModules.Count == 1 ? "" : "s")</span>
+                </div>
+
+                @if (completedModules.Any())
+                {
+                    <div class="module-history-stack">
+                        @foreach (var module in completedModules)
+                        {
+                            var completedCount = GetCompletedMessageCount(module);
+
+                            <article class="module-history-card">
+                                <div class="module-history-header">
+                                    <div>
+                                        <div class="module-history-title-row">
+                                            <h3 class="module-history-title">@module.ModuleName</h3>
+                                            <span class="module-state-badge @(module.IsModuleCompleted ? "is-complete" : "is-in-progress")">
+                                                @(module.IsModuleCompleted ? "Completed" : "In progress")
+                                            </span>
+                                        </div>
+                                        <p class="module-history-meta">
+                                            @completedCount of @module.Messages.Count activities completed
+                                        </p>
+                                    </div>
+                                    <div class="module-history-score">
+                                        <span class="module-history-score-value">@CalculateCompletionRate(module.Messages)%</span>
+                                        <span class="module-history-score-label">completion</span>
+                                    </div>
+                                </div>
+
+                                <div class="module-message-stack">
+                                    @foreach (var message in module.Messages.OrderBy(message => message.AutoId))
+                                    {
+                                        <div class="module-message-card">
+                                            <div class="module-message-header">
+                                                <div>
+                                                    <h4 class="module-message-title">@message.WidgetTitle</h4>
+                                                    <p class="module-message-type">@message.ResponseType</p>
+                                                </div>
+                                                <span class="message-state-badge @(message.IsCompletedForContact ? "is-complete" : "is-pending")">
+                                                    @(message.IsCompletedForContact ? "Completed" : "Pending")
+                                                </span>
+                                            </div>
+
+                                            <p class="module-message-body">@message.WidgetMessage</p>
+
+                                            <div class="module-message-detail-grid">
+                                                <div class="message-detail-item">
+                                                    <span class="message-detail-label">Response</span>
+                                                    <span class="message-detail-value">@FormatResponseValue(message.ResponseValue)</span>
+                                                </div>
+                                                <div class="message-detail-item">
+                                                    <span class="message-detail-label">Submitted</span>
+                                                    <span class="message-detail-value">@FormatResponseDate(message.ResponseDate)</span>
+                                                </div>
+                                                <div class="message-detail-item">
+                                                    <span class="message-detail-label">Photos</span>
+                                                    <span class="message-detail-value">@message.MessageImages.Count</span>
+                                                </div>
+                                                <div class="message-detail-item">
+                                                    <span class="message-detail-label">Audio</span>
+                                                    @if (!string.IsNullOrWhiteSpace(message.AudioURL))
+                                                    {
+                                                        <a class="message-audio-link" href="@message.AudioURL" target="_blank" rel="noopener noreferrer">Open audio</a>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="message-detail-value">None</span>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            @if (message.MessageImages.Any())
+                                            {
+                                                <div class="message-images-grid">
+                                                    @foreach (var image in message.MessageImages.OrderBy(image => image.MessageOrder))
+                                                    {
+                                                        <button type="button"
+                                                                class="message-image-card"
+                                                                @onclick="@(() => OpenImagePreview(image.MessageImageUrl, GetImageAltText(message.WidgetTitle, image.MessageOrder), !string.IsNullOrWhiteSpace(image.MessageText) ? image.MessageText : $"{message.WidgetTitle} · Upload {image.MessageOrder + 1}"))">
+                                                            <div class="message-image-frame">
+                                                                <img src="@image.MessageImageUrl" alt="@GetImageAltText(message.WidgetTitle, image.MessageOrder)" loading="lazy" />
+                                                                <div class="message-image-overlay">
+                                                                    <span>View photo</span>
+                                                                </div>
+                                                            </div>
+                                                            <span class="message-image-caption">
+                                                                @(!string.IsNullOrWhiteSpace(image.MessageText) ? image.MessageText : $"Upload {image.MessageOrder + 1}")
+                                                            </span>
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="module-empty-state">
+                        <h3>No module activity yet</h3>
+                        <p>This child has no completed-module history to display.</p>
+                    </div>
+                }
+            </section>
+
+            <section class="clinical-history-section">
+                <div class="section-heading-row">
+                    <div>
+                        <p class="section-kicker">Clinical Records</p>
+                        <h2 class="section-title">Submitted clinical notes</h2>
+                        @* <p class="section-subtitle">Monthly RTM documentation and signed medical records.</p> *@
+                    </div>
+                    <span class="section-count">@signedNotes.Count record@(signedNotes.Count == 1 ? "" : "s")</span>
+                </div>
+
+                @if (signedNotes.Any())
+                {
+                    <div class="clinical-notes-stack">
+                        @foreach (var note in signedNotes)
+                        {
+                            <div class="clinical-note-card">
+                                <div class="note-card-main">
+                                    <div class="note-card-meta">
+                                        <div class="note-date-badge">
+                                            <span class="note-month">@(note.SignedAt?.ToString("MMM") ?? "Draft")</span>
+                                            <span class="note-day">@(note.SignedAt?.ToString("dd") ?? "--")</span>
+                                        </div>
+                                        <div class="note-info">
+                                            <h3 class="note-title">Remote Therapeutic Monitoring</h3>
+                                            <p class="note-author">Signed by @note.SignedBy · @note.SignedAt?.ToString("h:mm tt")</p>
+                                        </div>
+                                    </div>
+                                    <div class="note-card-actions">
+                                        <span class="note-status-pill @(note.Status == ClinicalNoteStatus.Signed ? "is-final" : "is-amended")">
+                                            @(note.Status == ClinicalNoteStatus.Signed ? "Finalized" : "Amended")
+                                        </span>
+                                        <button class="btn-amend-note" @onclick="() => OpenClinicalNoteDrawer(note.Id)">
+                                            Amend
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="module-empty-state">
+                        <div class="empty-icon-box">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                        </div>
+                        <h3>No signed notes yet</h3>
+                        <p>Document patient observations by adding a clinical note from the Provider Actions menu.</p>
+                    </div>
+                }
+            </section>
+        }
+    </div>
+
+    @if (showActionsMenu)
+    {
+        <div class="actions-overlay-backdrop" @onclick="() => showActionsMenu = false">
+            <div class="actions-menu-card" @onclick:stopPropagation="true">
+                <div class="actions-header">
+                    <h2 class="actions-title">Provider Actions</h2>
+                    <p class="actions-subtitle">Choose an action for @ChildDisplayName.</p>
+                </div>
+
+                <div class="actions-list">
+                    <button type="button" class="action-item primary-action" @onclick="OpenAssignExerciseDrawer">
+                        <div class="action-icon-box">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </div>
+                        <div class="action-text-box">
+                            <span class="action-name">Assign New Program</span>
+                            <span class="action-desc">Add a program from the library</span>
+                        </div>
+                    </button>
+
+                    <button class="action-item">
+                        <div class="action-icon-box grayscale">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </div>
+                        <div class="action-text-box">
+                            <span class="action-name">Adjust Schedule</span>
+                            <span class="action-desc">Modify frequency or duration</span>
+                        </div>
+                    </button>
+
+                    <button class="action-item">
+                        <div class="action-icon-box grayscale">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="4" width="4" height="16"></rect>
+                                <rect x="14" y="4" width="4" height="16"></rect>
+                            </svg>
+                        </div>
+                        <div class="action-text-box">
+                            <span class="action-name">Pause Program</span>
+                            <span class="action-desc">Temporarily suspend activity</span>
+                        </div>
+                    </button>
+
+                    <div class="actions-divider"></div>
+
+                    <button class="action-item low-profile" @onclick="() => OpenClinicalNoteDrawer()">
+                        <div class="action-icon-box grayscale small-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"></path>
+                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                            </svg>
+                        </div>
+                        <div class="action-text-box">
+                            <span class="action-name">Add Clinical Note</span>
+                            <span class="action-desc">Document observations</span>
+                        </div>
+                    </button>
+
+                    <button class="action-item low-profile">
+                        <div class="action-icon-box grayscale small-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                        </div>
+                        <div class="action-text-box">
+                            <span class="action-name">View Assignment History</span>
+                            <span class="action-desc">Past programs and adjustments</span>
+                        </div>
+                    </button>
+                </div>
+
+                <div class="actions-footer">
+                    <button class="btn-close-actions" @onclick="() => showActionsMenu = false">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+
+
+    @if (showImagePreview)
+    {
+        <div class="image-preview-backdrop" @onclick="CloseImagePreview">
+            <div class="image-preview-dialog" @onclick:stopPropagation="true">
+                <button type="button" class="image-preview-close" @onclick="CloseImagePreview" aria-label="Close image preview">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+                <div class="image-preview-shell">
+                    <img src="@selectedImageUrl" alt="@selectedImageAlt" class="image-preview-media" />
+                </div>
+                <div class="image-preview-meta">
+                    <p class="image-preview-caption">@selectedImageCaption</p>
+                </div>
+            </div>
+        </div>
+    }
+
+    <AssignExerciseDrawer IsVisible="@showAssignDrawer"
+                          IsVisibleChanged="HandleAssignDrawerVisibilityChanged"
+                          Contact="@child"
+                          OperatorName="@operatorName"
+                          OnAssigned="LoadChildAsync" />
+
+    @if (showClinicalNote)
+    {
+        <RtmNoteEditor Id="Id" 
+                      ExistingNoteId="@selectedNoteIdForAmendment"
+                      ChildDisplayName="@MaskName(child?.ContactName, "Child")"
+                      OperatorName="@operatorName"
+                      OperatorId="@operatorId"
+                      AppDaysCount="@completedModules.Count"
+                      AdherenceRate="@OverallAdherence"
+                      OnClose="CloseClinicalNote"
+                      OnSigned="HandleNoteSigned" />
+    }
+
+    @if (!isLoading && child != null && !showClinicalNote)
+    {
+        var accumulatedSeconds = AppState.ReviewTimeSecondsPerChild.GetValueOrDefault(Id, 0);
+        var liveChatExtra = 0;
+        if (AppState.ChatSessionStartTimePerChild.TryGetValue(Id, out var chatStart))
+            liveChatExtra = (int)(DateTime.UtcNow - chatStart).TotalSeconds;
+        var totalSec = accumulatedSeconds + liveChatExtra;
+        var mm = totalSec / 60;
+        var ss = totalSec % 60;
+        var isChatActive = liveChatExtra > 0;
+        <div class="debug-sticker">
+            <div class="debug-sticker-icon @(isChatActive ? "chat" : "live")">
+                @if (isChatActive)
+                {
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                    </svg>
+                }
+                else
+                {
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                }
+            </div>
+            <div class="debug-sticker-body">
+                <div class="debug-sticker-label">@(isChatActive ? "💬 Chat · " : "📋 Profile · ")@ChildDisplayName</div>
+                <div class="debug-sticker-time">@mm.ToString("D2"):@ss.ToString("D2")</div>
+                <div class="debug-sticker-sub">@(mm) min accumulated</div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    [SupplyParameterFromQuery]
+    public int? ProgramId { get; set; }
+
+    private bool showActionsMenu;
+    private bool showImagePreview;
+    private bool showAssignDrawer;
+    private bool showClinicalNote;
+    private bool isLoading = true;
+
+    private System.Threading.Timer? _reviewTimer;
+    private int _currentChildIdForTimer;
+    private ContactWithStatusDto? child;
+    private List<AssignedTherapyDto> assignedPrograms = new();
+    private List<CompletedModuleDto> completedModules = new();
+    private string operatorName = "System";
+    private string selectedImageUrl = "";
+    private string selectedImageAlt = "";
+    private string selectedImageCaption = "";
+    private string? operatorId;
+    private List<ClinicalNote> signedNotes = new();
+    private int? selectedNoteIdForAmendment;
+
+    private string PageTitle => isLoading ? "Child Details" : $"{GetFirstName(ChildDisplayName)}'s Progress";
+    private string ChildDisplayName => MaskName(child?.ContactName, isLoading ? "Loading..." : "Child");
+    private string ChildAgeText => child?.CalculatedAge.HasValue == true ? $"{child.CalculatedAge.Value} years" : (isLoading ? "Loading..." : "Age unavailable");
+    private string ChildStatusText => isLoading ? "Loading" : child?.Status ?? (assignedPrograms.Any() ? "Active" : "No data");
+    private string AssignedProviderText => isLoading ? "Loading..." : child?.AssignedProviderName ?? "No provider assigned";
+    private string StatusBadgeClass => ChildStatusText.ToLowerInvariant() switch
+    {
+        "active" => "status-badge-active",
+        "new" => "status-badge-new",
+        "loading" => "status-badge-new",
+        _ => "status-badge-inactive"
+    };
+    private int ActiveProgramsCount => assignedPrograms.Any() ? assignedPrograms.Count : completedModules.Count;
+    private int OverallAdherence => completedModules.Any()
+        ? CalculateCompletionRate(completedModules.SelectMany(module => module.Messages))
+        : 0;
+    private IEnumerable<string> ProgramStackBarClasses =>
+        Enumerable.Range(0, Math.Max(ActiveProgramsCount, 3))
+            .Select(GetProgramStackBarClass);
+            
+    private List<ProgramDisplay> DisplayedPrograms { get; set; } = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadChildAsync();
+        InitializeReviewTimer();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && ProgramId.HasValue && !isLoading)
+        {
+            await ScrollToProgram(ProgramId.Value);
+        }
+        else if (!firstRender && ProgramId.HasValue && !isLoading)
+        {
+            // Only attempt to scroll once after loading is finished
+            if (!_hasScrolledToProgram)
+            {
+                _hasScrolledToProgram = true;
+                await ScrollToProgram(ProgramId.Value);
+            }
+        }
+    }
+
+    private bool _hasScrolledToProgram;
+
+    private async Task ScrollToProgram(int programId)
+    {
+        // Add a tiny delay to ensure DOM is updated
+        await Task.Delay(100);
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('program-{programId}')?.scrollIntoView({{ behavior: 'smooth', block: 'center' }}); document.getElementById('program-{programId}')?.classList.add('highlight-pulse');");
+    }
+
+    private void ToggleLike(CommentPost comment)
+    {
+        comment.HasLiked = !comment.HasLiked;
+        comment.LikesCount += comment.HasLiked ? 1 : -1;
+    }
+
+    private async Task FocusCommentInput(int programId)
+    {
+        // Smoothly scroll to the bottom of the feed and focus the input
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('comment-input-{programId}')?.focus(); document.getElementById('comment-input-{programId}')?.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});");
+    }
+
+    private void InitializeReviewTimer()
+    {
+        if (_currentChildIdForTimer == Id) return;
+        _currentChildIdForTimer = Id;
+        _reviewTimer?.Dispose();
+        
+        if (!AppState.ReviewTimeSecondsPerChild.ContainsKey(Id)) {
+            AppState.ReviewTimeSecondsPerChild[Id] = 0;
+            AppState.LastReviewActivityPerChild[Id] = DateTime.UtcNow;
+        }
+
+        var startAnchor = AppState.ReviewStartTimePerChild.GetValueOrDefault(Id);
+        if (startAnchor.HasValue) {
+            var delta = DateTime.UtcNow - startAnchor.Value;
+            AppState.ReviewTimeSecondsPerChild[Id] += (int)delta.TotalSeconds;
+            AppState.ReviewStartTimePerChild[Id] = null;
+        }
+
+        _reviewTimer = new System.Threading.Timer(_ => {
+            if (!isLoading && !AppState.IsReviewTimerPaused(Id)) {
+                var now = DateTime.UtcNow;
+                var lastActive = AppState.LastReviewActivityPerChild.GetValueOrDefault(Id, now);
+                if ((now - lastActive).TotalMinutes < 10) {
+                    AppState.ReviewTimeSecondsPerChild[Id]++;
+                    AppState.LastReviewActivityPerChild[Id] = now;
+                    InvokeAsync(StateHasChanged);
+                }
+            }
+        }, null, 1000, 1000);
+    }
+
+    public void Dispose()
+    {
+        _reviewTimer?.Dispose();
+    }
+
+    private async Task LoadChildAsync()
+    {
+        isLoading = true;
+        child = null;
+        assignedPrograms = new List<AssignedTherapyDto>();
+        completedModules = new List<CompletedModuleDto>();
+
+        try
+        {
+            await AppState.EnsureInitializedAsync();
+
+            var authState = await AuthProvider.GetAuthenticationStateAsync();
+            if (authState.User?.Identity?.IsAuthenticated == true)
+            {
+                operatorName = authState.User.Identity.Name ?? "System";
+                operatorId = authState.User.FindFirst("UserId")?.Value ?? operatorName;
+            }
+
+            var contactsTask = UserService.GetContactsWithStatusAsync(AppState.MuseumId, null, operatorName);
+            var assignmentsTask = UserService.GetContactAssignmentsAsync(Id, operatorName);
+            var modulesTask = UserService.GetCompletedModulesForContactAsync(Id, operatorName);
+            var notesTask = ClinicalNoteService.GetSignedNotesForChildAsync(Id);
+
+            await Task.WhenAll(contactsTask, assignmentsTask, modulesTask, notesTask);
+
+            child = contactsTask.Result.FirstOrDefault(contact => contact.ContactId == Id);
+            assignedPrograms = assignmentsTask.Result ?? new List<AssignedTherapyDto>();
+            completedModules = modulesTask.Result ?? new List<CompletedModuleDto>();
+            signedNotes = notesTask.Result ?? new List<ClinicalNote>();
+
+            if (child != null)
+            {
+                child.Assignments = assignedPrograms;
+                if (assignedPrograms.Any() || completedModules.Any())
+                {
+                    child.Status = "Active";
+                }
+            }
+
+            DisplayedPrograms = assignedPrograms.Any()
+                ? assignedPrograms.Select(MapAssignedProgramDisplay).ToList()
+                : completedModules.Select(MapProgramDisplay).ToList();
+        }
+        catch
+        {
+            NotificationService.Error("Error", "Unable to load child details.");
+            assignedPrograms = new List<AssignedTherapyDto>();
+            completedModules = new List<CompletedModuleDto>();
+            DisplayedPrograms = new List<ProgramDisplay>();
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private ProgramDisplay MapProgramDisplay(CompletedModuleDto module)
+    {
+        var completionRate = CalculateCompletionRate(module.Messages);
+        var latestResponseDate = module.Messages
+            .Where(message => message.ResponseDate.HasValue)
+            .Max(message => message.ResponseDate);
+
+        var programId = module.ModuleId;
+        var display = new ProgramDisplay
+        {
+            Id = programId,
+            Name = string.IsNullOrWhiteSpace(module.ModuleName) ? $"Module {module.ModuleId}" : module.ModuleName,
+            CompletionRate = completionRate,
+            ScheduleText = "Daily · 4 weeks",
+            LastActivityText = latestResponseDate.HasValue ? FormatTimeAgo(latestResponseDate.Value) : "2 hours ago",
+            Trend = completionRate >= 80 ? ProgramTrend.Up : ProgramTrend.Neutral,
+            ChartColor = completionRate >= 80 ? "green" : "yellow"
+        };
+        
+        // Mock comments for testing (added to all for prototyping)
+        display.Comments.Add(new CommentPost 
+        { 
+            AuthorName = "Activity Update", 
+            AvatarInitials = "🤖", 
+            Content = "John Lune has completed day-1 excercies", 
+            Timestamp = "Just now",
+            LikesCount = 0,
+            HasLiked = false
+        });
+        display.Comments.Add(new CommentPost 
+        { 
+            AuthorName = "Dr. Sarah Jenkins", 
+            AvatarInitials = "SJ", 
+            Content = "Welldone John, way to go", 
+            Timestamp = "Just now",
+            LikesCount = 1,
+            HasLiked = true
+        });
+        display.IsCommentsExpanded = false; // Start collapsed so they can expand it
+
+        return display;
+    }
+
+    private ProgramDisplay MapAssignedProgramDisplay(AssignedTherapyDto assignment)
+    {
+        var completedModule = completedModules.FirstOrDefault(module => module.ModuleId == assignment.ModuleId);
+        var completionRate = completedModule != null ? CalculateCompletionRate(completedModule.Messages) : 0;
+        var latestResponseDate = completedModule?.Messages
+            .Where(message => message.ResponseDate.HasValue)
+            .Max(message => message.ResponseDate);
+
+        var programId = assignment.ModuleId;
+        var display = new ProgramDisplay
+        {
+            Id = programId,
+            Name = string.IsNullOrWhiteSpace(assignment.ModuleName) ? $"Module {assignment.ModuleId}" : assignment.ModuleName,
+            CompletionRate = completionRate,
+            ScheduleText = FormatAssignmentSchedule(assignment),
+            LastActivityText = latestResponseDate.HasValue ? FormatTimeAgo(latestResponseDate.Value) : "Not started",
+            Trend = completionRate >= 80 ? ProgramTrend.Up : ProgramTrend.Neutral,
+            ChartColor = completionRate >= 80 ? "green" : "yellow"
+        };
+        
+        // Mock comments for testing (added to all for prototyping)
+        display.Comments.Add(new CommentPost 
+        { 
+            AuthorName = "Activity Update", 
+            AvatarInitials = "🤖", 
+            Content = "Chloe Lune has completed breathing excercise", 
+            Timestamp = "5 min ago",
+            LikesCount = 0,
+            HasLiked = false
+        });
+        display.IsCommentsExpanded = false; // Start collapsed so they can expand it
+
+        return display;
+    }
+
+    private static string FormatAssignmentSchedule(AssignedTherapyDto assignment)
+    {
+        if (assignment.SpecificDateTimeUtc.HasValue)
+        {
+            return assignment.SpecificDateTimeUtc.Value.ToLocalTime().ToString("MMM d, yyyy");
+        }
+
+        if (!string.IsNullOrWhiteSpace(assignment.ScheduleType))
+        {
+            if (assignment.ScheduleType.Equals("Relative", StringComparison.OrdinalIgnoreCase) && assignment.RelativeValue.HasValue && !string.IsNullOrWhiteSpace(assignment.RelativeUnit))
+            {
+                var refStr = !string.IsNullOrWhiteSpace(assignment.RelativeTo) ? $" after {assignment.RelativeTo}" : "";
+                return $"{assignment.RelativeValue} {assignment.RelativeUnit}{refStr}";
+            }
+            return assignment.ScheduleType;
+        }
+
+        return "Assigned";
+    }
+
+    private static int CalculateCompletionRate(IEnumerable<CompletedModuleMessageDto>? messages)
+    {
+        var items = messages?.ToList() ?? new List<CompletedModuleMessageDto>();
+        if (items.Count == 0)
+        {
+            return 0;
+        }
+
+        var completedCount = items.Count(message => message.IsCompletedForContact);
+        return (int)Math.Round((double)completedCount * 100 / items.Count, MidpointRounding.AwayFromZero);
+    }
+
+    private static string FormatTimeAgo(DateTime dateTime)
+    {
+        var utcValue = dateTime.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+            : dateTime.ToUniversalTime();
+        var timeSpan = DateTime.UtcNow - utcValue;
+
+        if (timeSpan.TotalMinutes < 1)
+        {
+            return "Just now";
+        }
+
+        if (timeSpan.TotalMinutes < 60)
+        {
+            return $"{(int)timeSpan.TotalMinutes} minutes ago";
+        }
+
+        if (timeSpan.TotalHours < 24)
+        {
+            return $"{(int)timeSpan.TotalHours} hours ago";
+        }
+
+        if (timeSpan.TotalDays < 2)
+        {
+            return "Yesterday";
+        }
+
+        if (timeSpan.TotalDays < 7)
+        {
+            return $"{(int)timeSpan.TotalDays} days ago";
+        }
+
+        return utcValue.ToString("MMM d, yyyy");
+    }
+
+    private static string MaskName(string? fullName, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            return fallback;
+        }
+
+        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1)
+        {
+            return parts[0];
+        }
+
+        return $"{parts[0]} {parts[^1][0]}.";
+    }
+
+    private static string GetFirstName(string displayName)
+    {
+        return displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Child";
+    }
+
+    private static string GetProgramStackBarClass(int index)
+    {
+        switch (index % 3)
+        {
+            case 0:
+                return "green";
+            case 1:
+                return "yellow";
+            default:
+                return "blue";
+        }
+    }
+
+    private static int GetCompletedMessageCount(CompletedModuleDto module)
+    {
+        return module.Messages.Count(message => message.IsCompletedForContact);
+    }
+
+    private static string FormatResponseDate(DateTime? responseDate)
+    {
+        if (!responseDate.HasValue)
+        {
+            return "Not submitted";
+        }
+
+        return responseDate.Value.ToString("MMM d, yyyy h:mm tt");
+    }
+
+    private static string FormatResponseValue(string? responseValue)
+    {
+        if (string.IsNullOrWhiteSpace(responseValue))
+        {
+            return "No response yet";
+        }
+
+        return responseValue;
+    }
+
+    private static string GetImageAltText(string widgetTitle, int messageOrder)
+    {
+        return $"{widgetTitle} upload {messageOrder + 1}";
+    }
+
+    private void OpenImagePreview(string imageUrl, string imageAlt, string imageCaption)
+    {
+        selectedImageUrl = imageUrl;
+        selectedImageAlt = imageAlt;
+        selectedImageCaption = imageCaption;
+        showImagePreview = true;
+    }
+
+    private async Task OpenAssignExerciseDrawer()
+    {
+        showActionsMenu = false;
+
+        if (child == null)
+        {
+            NotificationService.Error("Unavailable", "Child details are still loading.");
+            return;
+        }
+
+        showAssignDrawer = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseImagePreview()
+    {
+        showImagePreview = false;
+        selectedImageUrl = "";
+        selectedImageAlt = "";
+        selectedImageCaption = "";
+    }
+
+    private async Task OpenClinicalNoteDrawer(int? existingNoteId = null) 
+    {
+        showActionsMenu = false;
+        selectedNoteIdForAmendment = existingNoteId;
+        
+        // Ensure child data is present
+        if (child == null)
+        {
+            NotificationService.Warning("Still Loading", "Please wait for child details to load.");
+            return;
+        }
+
+        showClinicalNote = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseClinicalNote()
+    {
+        showClinicalNote = false;
+    }
+
+    private async Task HandleNoteSigned()
+    {
+        AppState.ResetReviewTime(Id);
+        showClinicalNote = false;
+        await LoadChildAsync(); // Refresh the list of signed notes
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleAssignDrawerVisibilityChanged(bool isVisible)
+    {
+        showAssignDrawer = isVisible;
+    }
+
+    private string FormatReviewTime(int totalSeconds)
+    {
+        var hours = totalSeconds / 3600;
+        var minutes = (totalSeconds % 3600) / 60;
+        var seconds = totalSeconds % 60;
+        return string.Format("{0:D2}:{1:D2}:{2:D2}", hours, minutes, seconds);
+    }
+
+    private void SaveProgramComment(ProgramDisplay program)
+    {
+        if (!string.IsNullOrWhiteSpace(program.NewComment))
+        {
+            program.Comments.Add(new CommentPost 
+            { 
+                AuthorName = operatorName, 
+                AvatarInitials = operatorName.Length > 0 ? operatorName.Substring(0, 1).ToUpper() : "T",
+                Content = program.NewComment, 
+                Timestamp = "Just now" 
+            });
+            program.NewComment = "";
+            program.ShowCommentInput = false;
+            program.IsCommentsExpanded = true;
+        }
+    }
+
+    public class CommentPost
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string AuthorName { get; set; } = "";
+        public string AvatarInitials { get; set; } = "";
+        public string Content { get; set; } = "";
+        public string Timestamp { get; set; } = "";
+        public int LikesCount { get; set; }
+        public bool HasLiked { get; set; }
+    }
+
+    public class ProgramDisplay
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public int CompletionRate { get; set; }
+        public string ScheduleText { get; set; } = "";
+        public string LastActivityText { get; set; } = "";
+        public ProgramTrend Trend { get; set; }
+        public string ChartColor { get; set; } = "blue";
+        public string NewComment { get; set; } = "";
+        public List<CommentPost> Comments { get; set; } = new();
+        public bool IsCommentsExpanded { get; set; }
+        public bool ShowCommentInput { get; set; }
+        public bool ShowEmojiPicker { get; set; }
+    }
+
+    public enum ProgramTrend
+    {
+        Up,
+        Down,
+        Neutral
+    }
+}
