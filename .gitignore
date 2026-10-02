@@ -524,6 +524,8 @@ appsettings.*.Local.json
 *.tmp
 *.temp
 
+*.agent
+
 # Scratch files, mockups, and screenshots
 todo
 todo.*
