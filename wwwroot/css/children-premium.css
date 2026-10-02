@@ -557,10 +557,22 @@
     margin-top: 4px;
     padding: 2px 8px;
     border-radius: 12px;
-    /* background-color: #eff6ff; */
     color: #3b82f6;
     font-size: 12px;
     font-weight: 600;
+}
+
+.active-programs-badge.interactive {
+    cursor: pointer;
+    background: #f0f9ff;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.active-programs-badge.interactive:hover {
+    background: #e0f2fe;
+    color: #0284c7;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.15);
 }
 
 .last-active-muted {
@@ -676,6 +688,13 @@
     font-size: 12px;
     color: #94a3b8;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.compact-date-lbl svg {
+    flex-shrink: 0;
 }
 
 .compact-date-col.is-overdue .compact-date-val,
@@ -710,6 +729,30 @@
     color: #2563eb;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+/* Program Schedule button - outlined border style with indigo theme */
+.program-schedule-btn-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid #e2e8f0;
+    background: #ffffff;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+    color: #6366f1;
+}
+
+.program-schedule-btn-icon:hover {
+    background: #eef2ff;
+    border-color: #818cf8;
+    color: #4f46e5;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
 }
 
 /* Assign button - purple filled style with text label */

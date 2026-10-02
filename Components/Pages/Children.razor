@@ -200,7 +200,12 @@
                                             </div>
                                             @if (!expandedChildIds.Contains(contact.ContactId))
                                             {
-                                                <div class="active-programs-badge">
+                                                <div class="active-programs-badge interactive"
+                                                     @onclick:stopPropagation="true"
+                                                     @onclick="() => OpenProgramSchedule(contact)"
+                                                     title="View Assigned Program Schedule"
+                                                     role="button"
+                                                     tabindex="0">
                                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                                         <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
                                                         <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
@@ -250,12 +255,28 @@
                                                             <polyline points="12 6 12 12 16 14"></polyline>
                                                         </svg>
                                                     </span>
-                                                    <span class="compact-date-lbl overdue-lbl">next visit</span>
+                                                    <span class="compact-date-lbl overdue-lbl">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                                        </svg>
+                                                        next visit
+                                                    </span>
                                                 }
                                                 else
                                                 {
                                                     <span class="compact-date-val">—</span>
-                                                    <span class="compact-date-lbl">next visit</span>
+                                                    <span class="compact-date-lbl">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                                        </svg>
+                                                        next visit
+                                                    </span>
                                                 }
                                             </div>
                                         </div>
@@ -276,6 +297,18 @@
                                                 <span class="chat-unread-badge-overlay">@GetChildUnreadCount(contact)</span>
                                             }
                                         </div>
+
+                                        <button class="program-schedule-btn-icon"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => OpenProgramSchedule(contact)"
+                                                title="View Assigned Program Schedule"
+                                                aria-label="View Assigned Program Schedule">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                                                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                                                <path d="M9 14l2 2 4-4"></path>
+                                            </svg>
+                                        </button>
 
                                         <button class="assign-btn-icon"
                                                 @onclick:stopPropagation="true"
@@ -333,7 +366,11 @@
                                                 <div class="progress-fill-themed @GetAdherenceColorClass(contact.AdherenceRate)" style="width: @contact.AdherenceRate%;"></div>
                                             </div>
                                         </div>
-                                        <div class="metric-block">
+                                        <div class="metric-block" 
+                                             @onclick:stopPropagation="true"
+                                             @onclick="() => OpenProgramSchedule(contact)"
+                                             style="cursor: pointer;"
+                                             title="View Program Schedule">
                                             <span class="metric-label-small">EXERCISE</span>
                                             <span class="sub-metric-value">@contact.ProgramCount</span>
                                             <span class="sub-metric-tag">@contact.ProgramStatus</span>
@@ -485,12 +522,28 @@
                                                             <polyline points="12 6 12 12 16 14"></polyline>
                                                         </svg>
                                                     </span>
-                                                    <span class="compact-date-lbl overdue-lbl">next visit</span>
+                                                    <span class="compact-date-lbl overdue-lbl">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                                        </svg>
+                                                        next visit
+                                                    </span>
                                                 }
                                                 else
                                                 {
                                                     <span class="compact-date-val">—</span>
-                                                    <span class="compact-date-lbl">next visit</span>
+                                                    <span class="compact-date-lbl">
+                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                                                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                                                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                                                        </svg>
+                                                        next visit
+                                                    </span>
                                                 }
                                             </div>
                                         </div>
@@ -692,6 +745,10 @@
                       OperatorName="@operatorName"
                       OnAssigned="LoadContactsAsync" />
 
+<ProgramScheduleModal @bind-IsOpen="showProgramScheduleModal"
+                      Contact="@programScheduleContact"
+                      OnViewFullProgram="HandleViewFullProgramFromSchedule" />
+
 
 @code {
     // ==========================================
@@ -721,6 +778,8 @@
     private string searchQuery = "";
     private bool isLoading = true;
     private bool showAssignDrawer = false;
+    private bool showProgramScheduleModal = false;
+    private ContactWithStatusDto? programScheduleContact = null;
     private bool isLoadingModules = false;
     private AssignDrawerMode assignDrawerMode = AssignDrawerMode.Module;
     
@@ -1407,6 +1466,45 @@
         _ = FetchVisiblePageAssignmentsAsync();
         
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Opens the program schedule popup modal for a child contact.
+    /// Displays weekly schedule, metrics, and exercise breakdown.
+    /// </summary>
+    /// <param name="contact">The child contact whose program schedule is displayed</param>
+    private async Task OpenProgramSchedule(ContactWithStatusDto contact)
+    {
+        programScheduleContact = contact;
+        showProgramScheduleModal = true;
+
+        if ((contact.Assignments == null || !contact.Assignments.Any()) && !contact.IsLoadingAssignments)
+        {
+            try
+            {
+                contact.IsLoadingAssignments = true;
+                contact.Assignments = await UserService.GetContactAssignmentsAsync(contact.ContactId, operatorName);
+                TagAssignments(contact);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Children] Error fetching assignments for schedule modal: {ex.Message}");
+            }
+            finally
+            {
+                contact.IsLoadingAssignments = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task HandleViewFullProgramFromSchedule()
+    {
+        showProgramScheduleModal = false;
+        if (programScheduleContact != null)
+        {
+            await OpenAssignDrawer(programScheduleContact);
+        }
     }
 
     /// <summary>

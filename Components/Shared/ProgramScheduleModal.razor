@@ -1,0 +1,784 @@
+@using MuseumAdmin.Models
+@using System.Globalization
+
+@if (IsOpen)
+{
+    <div class="ps-overlay fade-in" @onclick="HandleClose" role="dialog" aria-modal="true" aria-labelledby="ps-title">
+        <div class="ps-modal fade-in-up" @onclick:stopPropagation="true">
+            <!-- Modal Header with Dev/Data Legend -->
+            <div class="ps-header">
+                <div class="ps-header-left">
+                    <div class="ps-title-row">
+                        <h2 id="ps-title" class="ps-title">Program Schedule</h2>
+                        <div class="ps-legend-pills" title="Data source status indicator">
+                            <span class="ps-dev-badge live">
+                                <span class="ps-dev-dot live"></span> Live API Data
+                            </span>
+                            <span class="ps-dev-badge placeholder">
+                                <span class="ps-dev-dot placeholder"></span> Placeholder Demo
+                            </span>
+                        </div>
+                    </div>
+                    <p class="ps-subtitle">Quick view of the exercise plan for this child</p>
+                </div>
+                <button type="button" class="ps-close-btn" @onclick="HandleClose" aria-label="Close modal">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Top Summary Banner -->
+            <div class="ps-summary-banner">
+                <!-- Child Info (Live) -->
+                <div class="ps-summary-col ps-child-col">
+                    <div class="ps-child-avatar">
+                        <span class="ps-avatar-char">@ChildInitial</span>
+                        <span class="ps-avatar-dot"></span>
+                    </div>
+                    <div class="ps-child-meta">
+                        <div class="ps-name-with-badge">
+                            <h4 class="ps-child-name">@ChildName</h4>
+                            <span class="ps-mini-tag live" title="Loaded from active Contact record">LIVE</span>
+                        </div>
+                        <p class="ps-child-sub">@CaregiverAndAge</p>
+                    </div>
+                </div>
+
+                <!-- Program Details (Live or Placeholder) -->
+                <div class="ps-summary-col ps-prog-col @(isProgramPlaceholder ? "is-ph-field" : "is-live-field")">
+                    <div class="ps-name-with-badge">
+                        <h4 class="ps-prog-name">@ProgramName</h4>
+                        <span class="ps-mini-tag @(isProgramPlaceholder ? "placeholder" : "live")">
+                            @(isProgramPlaceholder ? "PLACEHOLDER" : "LIVE")
+                        </span>
+                    </div>
+                    <p class="ps-prog-duration">
+                        @ProgramDuration
+                        @if (isDatesPlaceholder)
+                        {
+                            <span class="ps-inline-ph">(Estimated)</span>
+                        }
+                    </p>
+                </div>
+
+                <!-- Overall Progress (Live or Placeholder) -->
+                <div class="ps-summary-col ps-progress-col">
+                    <div class="ps-progress-header">
+                        <div class="ps-progress-header-left">
+                            <span class="ps-progress-lbl">Overall Progress</span>
+                            <span class="ps-mini-tag @(isProgressLive ? "live" : "placeholder")">
+                                @(isProgressLive ? "CALCULATED" : "ESTIMATED")
+                            </span>
+                        </div>
+                        <span class="ps-progress-pct">@overallProgressPct%</span>
+                    </div>
+                    <div class="ps-progress-bar-track">
+                        <div class="ps-progress-bar-fill" style="width: @(overallProgressPct)%"></div>
+                    </div>
+                    <span class="ps-progress-sub">@completedExercisesText</span>
+                </div>
+            </div>
+
+            <!-- Main Two-Column Body -->
+            <div class="ps-body">
+                <!-- Left Sidebar: Weeks (14) -->
+                <aside class="ps-weeks-sidebar">
+                    <div class="ps-sidebar-title-row">
+                        <span class="ps-sidebar-title">Weeks (@weeks.Count)</span>
+                        <span class="ps-sidebar-subtag">W3 is active</span>
+                    </div>
+                    <div class="ps-weeks-list">
+                        @foreach (var week in weeks)
+                        {
+                            var isWeekLive = week.Number == 3 && isWeek3Live;
+                            <div class="ps-week-row @(selectedWeekNumber == week.Number ? "active" : "") @(isWeekLive ? "live-week" : "ph-week")"
+                                 @onclick="() => SelectWeek(week.Number)"
+                                 role="button"
+                                 tabindex="0">
+                                <div class="ps-week-info">
+                                    <div class="ps-week-num-line">
+                                        <span class="ps-week-num">Week @week.Number</span>
+                                        <span class="ps-micro-tag @(isWeekLive ? "live" : "placeholder")">
+                                            @(isWeekLive ? "LIVE" : "PH")
+                                        </span>
+                                    </div>
+                                    <span class="ps-week-dates">@week.DateRange</span>
+                                </div>
+                                <div class="ps-week-status-group">
+                                    @if (week.Status == WeekStatus.Completed)
+                                    {
+                                        <span class="ps-status-icon completed" title="Completed">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                                <polyline points="20 6 9 17 4 12"></polyline>
+                                            </svg>
+                                        </span>
+                                        <span class="ps-count-badge completed">@week.CompletedCount/@week.TotalCount</span>
+                                    }
+                                    else if (week.Status == WeekStatus.InProgress)
+                                    {
+                                        <span class="ps-status-icon in-progress" title="In progress">
+                                            <span class="ps-dot-amber"></span>
+                                        </span>
+                                        <span class="ps-count-badge in-progress">@week.CompletedCount/@week.TotalCount</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="ps-status-icon not-started" title="Not started">
+                                            <span class="ps-circle-grey"></span>
+                                        </span>
+                                        <span class="ps-count-badge not-started">@week.CompletedCount/@week.TotalCount</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Bottom Status Legend -->
+                    <div class="ps-legend">
+                        <div class="ps-legend-item">
+                            <span class="ps-legend-dot completed"></span>
+                            <span>Completed</span>
+                        </div>
+                        <div class="ps-legend-item">
+                            <span class="ps-legend-dot in-progress"></span>
+                            <span>In progress</span>
+                        </div>
+                        <div class="ps-legend-item">
+                            <span class="ps-legend-dot not-started"></span>
+                            <span>Not started</span>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- Right Pane: Week Details & Exercises -->
+                <main class="ps-detail-pane">
+                    <!-- Week Title Row & Pagination -->
+                    <div class="ps-detail-header">
+                        <div class="ps-detail-title-row">
+                            <h3 class="ps-detail-week-title">Week @CurrentWeek.Number</h3>
+                            <span class="ps-detail-dates">@CurrentWeek.DateRangeFull</span>
+                            @if (CurrentWeek.Status == WeekStatus.Completed)
+                            {
+                                <span class="ps-pill-badge completed">
+                                    <span class="ps-dot-green"></span> Completed
+                                </span>
+                            }
+                            else if (CurrentWeek.Status == WeekStatus.InProgress)
+                            {
+                                <span class="ps-pill-badge in-progress">
+                                    <span class="ps-dot-amber"></span> In progress
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="ps-pill-badge not-started">
+                                    <span class="ps-dot-grey"></span> Not started
+                                </span>
+                            }
+
+                            <!-- Source Indicator Tag for Current Week -->
+                            <span class="ps-mini-tag @(selectedWeekNumber == 3 && isWeek3Live ? "live" : "placeholder")">
+                                @(selectedWeekNumber == 3 && isWeek3Live ? "LIVE ASSIGNMENTS" : "PLACEHOLDER DEMO")
+                            </span>
+                        </div>
+
+                        <!-- Week Pagination Controls -->
+                        <div class="ps-pagination">
+                            <button type="button" 
+                                    class="ps-page-arrow" 
+                                    @onclick="PrevWeek" 
+                                    disabled="@(selectedWeekNumber <= 1)"
+                                    aria-label="Previous week">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                </svg>
+                            </button>
+                            <span class="ps-page-text">Week @selectedWeekNumber of @weeks.Count</span>
+                            <button type="button" 
+                                    class="ps-page-arrow" 
+                                    @onclick="NextWeek" 
+                                    disabled="@(selectedWeekNumber >= weeks.Count)"
+                                    aria-label="Next week">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 4 Summary Metric Cards -->
+                    <div class="ps-metric-cards-grid">
+                        <div class="ps-stat-card">
+                            <div class="ps-stat-icon-box blue">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                </svg>
+                            </div>
+                            <div class="ps-stat-content">
+                                <span class="ps-stat-value">@CurrentWeek.TotalCount</span>
+                                <span class="ps-stat-label">Exercises</span>
+                            </div>
+                        </div>
+
+                        <div class="ps-stat-card">
+                            <div class="ps-stat-icon-box green">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            </div>
+                            <div class="ps-stat-content">
+                                <span class="ps-stat-value">@CurrentWeek.CompletedCount</span>
+                                <span class="ps-stat-label">Completed</span>
+                            </div>
+                        </div>
+
+                        <div class="ps-stat-card">
+                            <div class="ps-stat-icon-box purple">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </div>
+                            <div class="ps-stat-content">
+                                <span class="ps-stat-value">@CurrentWeek.TypicalFrequency</span>
+                                <span class="ps-stat-label">Typical frequency</span>
+                            </div>
+                        </div>
+
+                        <div class="ps-stat-card">
+                            <div class="ps-stat-icon-box cyan">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                            </div>
+                            <div class="ps-stat-content">
+                                <span class="ps-stat-value">@CurrentWeek.AssignedTo</span>
+                                <span class="ps-stat-label">Assigned to</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Exercises In This Week -->
+                    <div class="ps-exercises-section">
+                        <div class="ps-exercises-header-row">
+                            <h4 class="ps-exercises-title">Exercises in this week</h4>
+                            <span class="ps-mini-tag @(selectedWeekNumber == 3 && isWeek3Live ? "live" : "placeholder")">
+                                @(selectedWeekNumber == 3 && isWeek3Live ? $"LIVE FROM API ({CurrentWeek.Exercises.Count} ITEMS)" : "PLACEHOLDER CURRICULUM")
+                            </span>
+                        </div>
+                        <div class="ps-table-container">
+                            <table class="ps-table">
+                                <thead>
+                                    <tr>
+                                        <th class="ps-th th-exercise">EXERCISE</th>
+                                        <th class="ps-th th-frequency">FREQUENCY</th>
+                                        <th class="ps-th th-notification">NOTIFICATION</th>
+                                        <th class="ps-th th-status">STATUS</th>
+                                        <th class="ps-th th-arrow"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (CurrentWeek.Exercises != null && CurrentWeek.Exercises.Any())
+                                    {
+                                        @foreach (var ex in CurrentWeek.Exercises)
+                                        {
+                                            var isExLive = selectedWeekNumber == 3 && isWeek3Live;
+                                            <tr class="ps-tr @(isExLive ? "row-live" : "row-placeholder")">
+                                                <td class="ps-td td-exercise">
+                                                    <div class="ps-ex-meta-group">
+                                                        <span class="ps-ex-icon-wrapper @ex.IconColorClass">
+                                                            @((MarkupString)ex.IconSvg)
+                                                        </span>
+                                                        <span class="ps-ex-name">@ex.Name</span>
+                                                    </div>
+                                                </td>
+                                                <td class="ps-td td-frequency">
+                                                    <span class="ps-td-text">@ex.Frequency</span>
+                                                </td>
+                                                <td class="ps-td td-notification">
+                                                    @if (!string.IsNullOrEmpty(ex.Notification) && ex.Notification != "—")
+                                                    {
+                                                        <span class="ps-notification-pill">
+                                                            @if (ex.Notification.Contains("Morning"))
+                                                            {
+                                                                <span class="ps-emoji">☀️</span>
+                                                            }
+                                                            else if (ex.Notification.Contains("After school"))
+                                                            {
+                                                                <span class="ps-emoji">🏫</span>
+                                                            }
+                                                            else if (ex.Notification.Contains("Bedtime"))
+                                                            {
+                                                                <span class="ps-emoji">🌙</span>
+                                                            }
+                                                            <span>@ex.Notification</span>
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="ps-td-muted">—</span>
+                                                    }
+                                                </td>
+                                                <td class="ps-td td-status">
+                                                    @if (ex.Status == ExerciseStatus.Completed)
+                                                    {
+                                                        <span class="ps-badge-pill completed">Completed</span>
+                                                    }
+                                                    else if (ex.Status == ExerciseStatus.InProgress)
+                                                    {
+                                                        <span class="ps-badge-pill in-progress">In progress</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="ps-badge-pill not-started">Not started</span>
+                                                    }
+                                                </td>
+                                                <td class="ps-td td-arrow">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                                    </svg>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="5" style="text-align: center; padding: 28px; color: #94a3b8; font-size: 13px;">
+                                                No exercises scheduled for this week.
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            <!-- Footer -->
+            <div class="ps-footer">
+                <button type="button" class="ps-btn-close" @onclick="HandleClose">Close</button>
+                <button type="button" class="ps-btn-view-program" @onclick="HandleViewFullProgram">View Full Program</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; } = false;
+
+    [Parameter]
+    public EventCallback<bool> IsOpenChanged { get; set; }
+
+    [Parameter]
+    public ContactWithStatusDto? Contact { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback OnViewFullProgram { get; set; }
+
+    // Dynamic child metadata
+    private string ChildName => !string.IsNullOrWhiteSpace(Contact?.ContactName) ? Contact.ContactName : "child test 9.3";
+    private string ChildInitial => !string.IsNullOrWhiteSpace(Contact?.ContactName) ? Contact.ContactName[0].ToString().ToUpper() : "C";
+    private string CaregiverName => !string.IsNullOrWhiteSpace(Contact?.OwnerName) ? Contact.OwnerName : "Sarah-Eva";
+    private string CaregiverAndAge => $"{CaregiverName} • {(!string.IsNullOrWhiteSpace(Contact?.Age) ? Contact.Age : "10")} yr";
+    
+    private string ProgramName = "Test Program - Fall 2026";
+    private string ProgramDuration = "14 weeks • Sep 15, 2026 – Dec 21, 2026";
+    private int overallProgressPct = 18;
+    private string completedExercisesText = "5 of 28 exercises completed";
+
+    // Track what is Live vs Placeholder for color coding
+    private bool isProgramPlaceholder = true;
+    private bool isDatesPlaceholder = true;
+    private bool isWeek3Live = false;
+    private bool isProgressLive = false;
+
+    private int selectedWeekNumber = 3;
+    private WeekScheduleItem CurrentWeek => weeks.FirstOrDefault(w => w.Number == selectedWeekNumber) ?? weeks[2];
+
+    private List<WeekScheduleItem> weeks = new();
+
+    protected override void OnParametersSet()
+    {
+        InitializeSchedule();
+    }
+
+    private void SelectWeek(int weekNumber)
+    {
+        selectedWeekNumber = weekNumber;
+    }
+
+    private void PrevWeek()
+    {
+        if (selectedWeekNumber > 1)
+        {
+            selectedWeekNumber--;
+        }
+    }
+
+    private void NextWeek()
+    {
+        if (selectedWeekNumber < weeks.Count)
+        {
+            selectedWeekNumber++;
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+        if (OnClose.HasDelegate)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task HandleViewFullProgram()
+    {
+        if (OnViewFullProgram.HasDelegate)
+        {
+            await OnViewFullProgram.InvokeAsync();
+        }
+        else
+        {
+            await HandleClose();
+        }
+    }
+
+    private void InitializeSchedule()
+    {
+        // 1. Establish 14-week calendar baseline
+        BuildBaseCalendar();
+
+        isProgramPlaceholder = true;
+        isDatesPlaceholder = true;
+        isWeek3Live = false;
+        isProgressLive = false;
+
+        // 2. Check for real program and assignment information
+        if (Contact?.Assignments != null && Contact.Assignments.Any())
+        {
+            var firstProg = Contact.Assignments.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.ProgramName));
+            if (firstProg != null)
+            {
+                ProgramName = firstProg.ProgramName!;
+                isProgramPlaceholder = false;
+            }
+            else
+            {
+                var firstMod = Contact.Assignments.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.ModuleName));
+                if (firstMod != null)
+                {
+                    ProgramName = firstMod.ModuleName;
+                    isProgramPlaceholder = false;
+                }
+            }
+
+            var dateAssignment = Contact.Assignments.FirstOrDefault(a => a.ProgramStartDate.HasValue);
+            if (dateAssignment?.ProgramStartDate != null)
+            {
+                var start = dateAssignment.ProgramStartDate.Value;
+                var end = dateAssignment.ProgramEndDate ?? start.AddDays(14 * 7);
+                ProgramDuration = $"14 weeks • {start:MMM dd, yyyy} – {end:MMM dd, yyyy}";
+                isDatesPlaceholder = false;
+            }
+
+            // 3. Extract real assigned exercises from all active assignments
+            var realExercises = Contact.Assignments
+                .SelectMany(a => a.Exercises ?? new List<AssignedExerciseDto>())
+                .ToList();
+
+            var realForms = Contact.Assignments
+                .SelectMany(a => a.Forms ?? new List<AssignedProgramFormDto>())
+                .ToList();
+
+            if (realExercises.Any() || realForms.Any())
+            {
+                isWeek3Live = true;
+                var mappedList = new List<WeekExerciseItem>();
+
+                foreach (var ex in realExercises)
+                {
+                    var name = !string.IsNullOrWhiteSpace(ex.ExerciseTitle) 
+                        ? ex.ExerciseTitle 
+                        : (!string.IsNullOrWhiteSpace(ex.WidgetTitle) ? ex.WidgetTitle : "Assigned Exercise");
+
+                    var freq = !string.IsNullOrWhiteSpace(ex.Frequency) 
+                        ? ex.Frequency 
+                        : (!string.IsNullOrWhiteSpace(ex.CompletionType) ? ex.CompletionType : "Daily");
+
+                    var notif = !string.IsNullOrWhiteSpace(ex.NotificationTime) && ex.NotificationTime != "None"
+                        ? ex.NotificationTime
+                        : (!string.IsNullOrWhiteSpace(ex.RemindMe) ? ex.RemindMe : "—");
+
+                    var status = ex.IsCompleted == true 
+                        ? ExerciseStatus.Completed 
+                        : (ex.IsExpiring == true || ex.ExerciseCompletionDate.HasValue ? ExerciseStatus.InProgress : ExerciseStatus.InProgress);
+
+                    var (colorClass, svg) = ResolveExerciseIcon(name, ex.Pillar);
+
+                    mappedList.Add(new WeekExerciseItem
+                    {
+                        Name = name,
+                        Frequency = freq,
+                        Notification = notif,
+                        Status = status,
+                        IconColorClass = colorClass,
+                        IconSvg = svg
+                    });
+                }
+
+                foreach (var f in realForms)
+                {
+                    mappedList.Add(new WeekExerciseItem
+                    {
+                        Name = !string.IsNullOrWhiteSpace(f.Title) ? f.Title : "Check-in Form",
+                        Frequency = !string.IsNullOrWhiteSpace(f.CompletionType) ? f.CompletionType : "Daily",
+                        Notification = !string.IsNullOrWhiteSpace(f.NotificationTime) && f.NotificationTime != "None" ? f.NotificationTime : "—",
+                        Status = ExerciseStatus.InProgress,
+                        IconColorClass = "purple",
+                        IconSvg = GetDocSvg()
+                    });
+                }
+
+                // Bind real exercises to current week (Week 3)
+                var currentWeekItem = weeks.FirstOrDefault(w => w.Number == 3);
+                if (currentWeekItem != null)
+                {
+                    currentWeekItem.Exercises = mappedList;
+                    currentWeekItem.TotalCount = mappedList.Count;
+                    currentWeekItem.CompletedCount = mappedList.Count(e => e.Status == ExerciseStatus.Completed);
+                    currentWeekItem.TypicalFrequency = mappedList.FirstOrDefault(e => !string.IsNullOrEmpty(e.Frequency))?.Frequency ?? "Daily";
+                    currentWeekItem.AssignedTo = "Any caregiver";
+                    currentWeekItem.Status = currentWeekItem.CompletedCount == currentWeekItem.TotalCount && currentWeekItem.TotalCount > 0
+                        ? WeekStatus.Completed
+                        : WeekStatus.InProgress;
+                }
+            }
+        }
+
+        // 4. Compute overall progress metrics
+        int totalExercises = weeks.Sum(w => w.TotalCount);
+        int completedExercises = weeks.Sum(w => w.CompletedCount);
+        if (Contact != null && Contact.AdherenceRate > 0)
+        {
+            overallProgressPct = (int)Math.Round(Contact.AdherenceRate);
+            isProgressLive = true;
+        }
+        else if (isWeek3Live)
+        {
+            overallProgressPct = totalExercises > 0 ? (int)Math.Round((double)completedExercises / totalExercises * 100) : 18;
+            isProgressLive = true;
+        }
+        else
+        {
+            overallProgressPct = 18;
+            isProgressLive = false;
+        }
+        completedExercisesText = $"{completedExercises} of {totalExercises} exercises completed";
+    }
+
+    private void BuildBaseCalendar()
+    {
+        weeks = new List<WeekScheduleItem>
+        {
+            new WeekScheduleItem
+            {
+                Number = 1,
+                DateRange = "Sep 15 – Sep 21",
+                DateRangeFull = "Sep 15 – Sep 21, 2026",
+                Status = WeekStatus.Completed,
+                CompletedCount = 6,
+                TotalCount = 6,
+                TypicalFrequency = "Daily",
+                AssignedTo = "Any caregiver",
+                Exercises = new List<WeekExerciseItem>
+                {
+                    new WeekExerciseItem { Name = "Foundational Breathing", Frequency = "Daily", Notification = "Morning", Status = ExerciseStatus.Completed, IconColorClass = "purple", IconSvg = GetDocSvg() },
+                    new WeekExerciseItem { Name = "Active Listening Intro", Frequency = "Daily", Notification = "After school", Status = ExerciseStatus.Completed, IconColorClass = "blue", IconSvg = GetUsersSvg() },
+                    new WeekExerciseItem { Name = "Outdoor Discovery", Frequency = "Once", Notification = "—", Status = ExerciseStatus.Completed, IconColorClass = "green", IconSvg = GetLeafSvg() },
+                    new WeekExerciseItem { Name = "Gentle Stretch", Frequency = "Daily", Notification = "Bedtime", Status = ExerciseStatus.Completed, IconColorClass = "rose", IconSvg = GetHeartSvg() },
+                    new WeekExerciseItem { Name = "Caregiver Grounding", Frequency = "Daily", Notification = "—", Status = ExerciseStatus.Completed, IconColorClass = "purple", IconSvg = GetMeditateSvg() },
+                    new WeekExerciseItem { Name = "Calm Focus Habit", Frequency = "Daily", Notification = "Morning", Status = ExerciseStatus.Completed, IconColorClass = "blue", IconSvg = GetBrainSvg() }
+                }
+            },
+            new WeekScheduleItem
+            {
+                Number = 2,
+                DateRange = "Sep 22 – Sep 28",
+                DateRangeFull = "Sep 22 – Sep 28, 2026",
+                Status = WeekStatus.Completed,
+                CompletedCount = 6,
+                TotalCount = 6,
+                TypicalFrequency = "Daily",
+                AssignedTo = "Any caregiver",
+                Exercises = new List<WeekExerciseItem>
+                {
+                    new WeekExerciseItem { Name = "Body Scan Exploration", Frequency = "Daily", Notification = "Morning", Status = ExerciseStatus.Completed, IconColorClass = "purple", IconSvg = GetDocSvg() },
+                    new WeekExerciseItem { Name = "Emotional Vocabulary", Frequency = "Daily", Notification = "After school", Status = ExerciseStatus.Completed, IconColorClass = "blue", IconSvg = GetUsersSvg() },
+                    new WeekExerciseItem { Name = "Sensory Garden Walk", Frequency = "Once", Notification = "—", Status = ExerciseStatus.Completed, IconColorClass = "green", IconSvg = GetLeafSvg() },
+                    new WeekExerciseItem { Name = "Family Story Connection", Frequency = "Daily", Notification = "Bedtime", Status = ExerciseStatus.Completed, IconColorClass = "rose", IconSvg = GetHeartSvg() },
+                    new WeekExerciseItem { Name = "Caregiver Breath Pause", Frequency = "Daily", Notification = "—", Status = ExerciseStatus.Completed, IconColorClass = "purple", IconSvg = GetMeditateSvg() },
+                    new WeekExerciseItem { Name = "Anxiety Reframe Exercise", Frequency = "Daily", Notification = "Morning", Status = ExerciseStatus.Completed, IconColorClass = "blue", IconSvg = GetBrainSvg() }
+                }
+            },
+            new WeekScheduleItem
+            {
+                Number = 3,
+                DateRange = "Sep 29 – Oct 5",
+                DateRangeFull = "Sep 29 – Oct 5, 2026",
+                Status = WeekStatus.InProgress,
+                CompletedCount = 3,
+                TotalCount = 8,
+                TypicalFrequency = "Daily",
+                AssignedTo = "Any caregiver",
+                Exercises = new List<WeekExerciseItem>
+                {
+                    new WeekExerciseItem { Name = "Test_multiple_questions", Frequency = "Daily", Notification = "Morning", Status = ExerciseStatus.Completed, IconColorClass = "purple", IconSvg = GetDocSvg() },
+                    new WeekExerciseItem { Name = "Interpersonal Skills", Frequency = "Daily", Notification = "After school", Status = ExerciseStatus.Completed, IconColorClass = "blue", IconSvg = GetUsersSvg() },
+                    new WeekExerciseItem { Name = "Nature Connection", Frequency = "Once", Notification = "—", Status = ExerciseStatus.Completed, IconColorClass = "green", IconSvg = GetLeafSvg() },
+                    new WeekExerciseItem { Name = "Relational Play - Notice", Frequency = "Daily", Notification = "Bedtime", Status = ExerciseStatus.InProgress, IconColorClass = "rose", IconSvg = GetHeartSvg() },
+                    new WeekExerciseItem { Name = "Caregiver Self-Regulation", Frequency = "Daily", Notification = "—", Status = ExerciseStatus.InProgress, IconColorClass = "purple", IconSvg = GetMeditateSvg() },
+                    new WeekExerciseItem { Name = "OCD Support", Frequency = "Daily", Notification = "Morning", Status = ExerciseStatus.NotStarted, IconColorClass = "cyan", IconSvg = GetBrainSvg() },
+                    new WeekExerciseItem { Name = "Social Skills", Frequency = "Daily", Notification = "—", Status = ExerciseStatus.NotStarted, IconColorClass = "blue", IconSvg = GetUsersSvg() },
+                    new WeekExerciseItem { Name = "Free Play", Frequency = "Daily", Notification = "After school", Status = ExerciseStatus.NotStarted, IconColorClass = "cyan", IconSvg = GetPlaySvg() }
+                }
+            },
+            new WeekScheduleItem { Number = 4, DateRange = "Oct 6 – Oct 12", DateRangeFull = "Oct 6 – Oct 12, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 8, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(8) },
+            new WeekScheduleItem { Number = 5, DateRange = "Oct 13 – Oct 19", DateRangeFull = "Oct 13 – Oct 19, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 8, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(8) },
+            new WeekScheduleItem { Number = 6, DateRange = "Oct 20 – Oct 26", DateRangeFull = "Oct 20 – Oct 26, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 8, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(8) },
+            new WeekScheduleItem { Number = 7, DateRange = "Oct 27 – Nov 2", DateRangeFull = "Oct 27 – Nov 2, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 6, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(6) },
+            new WeekScheduleItem { Number = 8, DateRange = "Nov 3 – Nov 9", DateRangeFull = "Nov 3 – Nov 9, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 6, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(6) },
+            new WeekScheduleItem { Number = 9, DateRange = "Nov 10 – Nov 16", DateRangeFull = "Nov 10 – Nov 16, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 4, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(4) },
+            new WeekScheduleItem { Number = 10, DateRange = "Nov 17 – Nov 23", DateRangeFull = "Nov 17 – Nov 23, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 4, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(4) },
+            new WeekScheduleItem { Number = 11, DateRange = "Nov 24 – Nov 30", DateRangeFull = "Nov 24 – Nov 30, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 4, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(4) },
+            new WeekScheduleItem { Number = 12, DateRange = "Dec 1 – Dec 7", DateRangeFull = "Dec 1 – Dec 7, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 4, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(4) },
+            new WeekScheduleItem { Number = 13, DateRange = "Dec 8 – Dec 14", DateRangeFull = "Dec 8 – Dec 14, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 2, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(2) },
+            new WeekScheduleItem { Number = 14, DateRange = "Dec 15 – Dec 21", DateRangeFull = "Dec 15 – Dec 21, 2026", Status = WeekStatus.NotStarted, CompletedCount = 0, TotalCount = 2, TypicalFrequency = "Daily", AssignedTo = "Any caregiver", Exercises = GeneratePlaceholderExercises(2) }
+        };
+    }
+
+    private List<WeekExerciseItem> GeneratePlaceholderExercises(int count)
+    {
+        var templates = new[]
+        {
+            ("Relational Play Reflection", "Daily", "Bedtime", "rose", GetHeartSvg()),
+            ("Caregiver Regulation Check", "Daily", "—", "purple", GetMeditateSvg()),
+            ("Mindful Observation", "Once", "—", "green", GetLeafSvg()),
+            ("Cognitive Behavioral Tool", "Daily", "Morning", "cyan", GetBrainSvg()),
+            ("Emotional Connection Game", "Daily", "After school", "blue", GetUsersSvg()),
+            ("Sensory Modulation", "Daily", "Morning", "purple", GetDocSvg()),
+            ("Expressive Arts Activity", "Daily", "After school", "cyan", GetPlaySvg()),
+            ("Family Debrief Routine", "Daily", "Bedtime", "blue", GetUsersSvg())
+        };
+
+        var list = new List<WeekExerciseItem>();
+        for (int i = 0; i < count; i++)
+        {
+            var t = templates[i % templates.Length];
+            list.Add(new WeekExerciseItem
+            {
+                Name = t.Item1,
+                Frequency = t.Item2,
+                Notification = t.Item3,
+                Status = ExerciseStatus.NotStarted,
+                IconColorClass = t.Item4,
+                IconSvg = t.Item5
+            });
+        }
+        return list;
+    }
+
+    private static (string colorClass, string svg) ResolveExerciseIcon(string name, string? pillar)
+    {
+        var lower = (name + " " + (pillar ?? "")).ToLowerInvariant();
+        if (lower.Contains("breath") || lower.Contains("calm") || lower.Contains("meditat") || lower.Contains("regulat"))
+            return ("purple", GetMeditateSvg());
+        if (lower.Contains("question") || lower.Contains("test") || lower.Contains("form") || lower.Contains("check"))
+            return ("purple", GetDocSvg());
+        if (lower.Contains("social") || lower.Contains("interpersonal") || lower.Contains("caregiver") || lower.Contains("family"))
+            return ("blue", GetUsersSvg());
+        if (lower.Contains("nature") || lower.Contains("garden") || lower.Contains("outdoor") || lower.Contains("walk"))
+            return ("green", GetLeafSvg());
+        if (lower.Contains("heart") || lower.Contains("relation") || lower.Contains("emotion") || lower.Contains("connect"))
+            return ("rose", GetHeartSvg());
+        if (lower.Contains("brain") || lower.Contains("ocd") || lower.Contains("focus") || lower.Contains("cognit"))
+            return ("cyan", GetBrainSvg());
+        if (lower.Contains("play") || lower.Contains("free") || lower.Contains("game") || lower.Contains("activ"))
+            return ("cyan", GetPlaySvg());
+
+        return ("blue", GetDocSvg());
+    }
+
+    private static string GetDocSvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z""></path><polyline points=""14 2 14 8 20 8""></polyline><line x1=""16"" y1=""13"" x2=""8"" y2=""13""></line><line x1=""16"" y1=""17"" x2=""8"" y2=""17""></line></svg>";
+
+    private static string GetUsersSvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2""></path><circle cx=""9"" cy=""7"" r=""4""></circle><path d=""M23 21v-2a4 4 0 0 0-3-3.87""></path><path d=""M16 3.13a4 4 0 0 1 0 7.75""></path></svg>";
+
+    private static string GetLeafSvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z""></path><path d=""M2 21c0-3 1.85-5.36 5.08-6""></path></svg>";
+
+    private static string GetHeartSvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""currentColor"" stroke=""currentColor"" stroke-width=""1""><path d=""M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z""></path></svg>";
+
+    private static string GetMeditateSvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""5"" r=""2""></circle><path d=""M4 17a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4""></path><path d=""M12 11v6""></path><path d=""M6 21h12""></path></svg>";
+
+    private static string GetBrainSvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""12"" r=""9""></circle><path d=""M9 9a3 3 0 0 1 6 0""></path><path d=""M9 15a3 3 0 0 0 6 0""></path></svg>";
+
+    private static string GetPlaySvg() =>
+        @"<svg width=""14"" height=""14"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><polygon points=""5 3 19 12 5 21 5 3""></polygon></svg>";
+
+    public enum WeekStatus
+    {
+        Completed,
+        InProgress,
+        NotStarted
+    }
+
+    public enum ExerciseStatus
+    {
+        Completed,
+        InProgress,
+        NotStarted
+    }
+
+    public class WeekScheduleItem
+    {
+        public int Number { get; set; }
+        public string DateRange { get; set; } = "";
+        public string DateRangeFull { get; set; } = "";
+        public WeekStatus Status { get; set; }
+        public int CompletedCount { get; set; }
+        public int TotalCount { get; set; }
+        public string TypicalFrequency { get; set; } = "Daily";
+        public string AssignedTo { get; set; } = "Any caregiver";
+        public List<WeekExerciseItem> Exercises { get; set; } = new();
+    }
+
+    public class WeekExerciseItem
+    {
+        public string Name { get; set; } = "";
+        public string Frequency { get; set; } = "Daily";
+        public string Notification { get; set; } = "";
+        public ExerciseStatus Status { get; set; }
+        public string IconColorClass { get; set; } = "purple";
+        public string IconSvg { get; set; } = "";
+    }
+}
