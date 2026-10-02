@@ -523,7 +523,7 @@ appsettings.*.Local.json
 *.orig
 *.tmp
 *.temp
-
+.agent/
 *.agent
 
 # Scratch files, mockups, and screenshots
